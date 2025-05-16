@@ -20,6 +20,16 @@ def traverse_dir(root:str):
                     img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
                 print(f"Converting {file_path} to npy (shape: {img.shape})")
                 np.save(file_path.with_suffix(".npy"), img, allow_pickle=False)
+            elif file_path.suffix == ".jpg": # case for badapple
+                img = cv2.imread(str(file_path), cv2.IMREAD_UNCHANGED)
+                if img is not None:
+                    img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA)
+                    # resize to 210x160
+                    img = cv2.resize(img, (160, 210),interpolation=cv2.INTER_CUBIC)
+                # trim leading zeroes from the filename
+                file_path = file_path.with_name(file_path.name.lstrip("0"))
+                print(f"Converting {file_path} to npy (shape: {img.shape})")
+                np.save(file_path.with_suffix(".npy"), img, allow_pickle=False)
             else:
                 print(f"Skipping {file_path} as it is not a png file")
 
