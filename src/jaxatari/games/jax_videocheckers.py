@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import chex
 import pygame
 
-from jaxatari.environment import JAXAtariAction
+from jaxatari.environment import JAXAtariAction as Action
 
 from jaxatari.renderers import AtraJaxisRenderer
 from jaxatari.rendering import atraJaxis as aj
@@ -62,11 +62,11 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             reward_funcs = tuple(reward_funcs)
         self.reward_funcs = reward_funcs
         self.action_set = {
-            JAXAtariAction.FIRE,
-            JAXAtariAction.UPRIGHT,
-            JAXAtariAction.UPLEFT,
-            JAXAtariAction.DOWNRIGHT,
-            JAXAtariAction.DOWNLEFT
+            Action.FIRE,
+            Action.UPRIGHT,
+            Action.UPLEFT,
+            Action.DOWNRIGHT,
+            Action.DOWNLEFT
         }
         # TODO: Nachfragen ob NOOP Action benötigt wird
 
@@ -297,19 +297,19 @@ def get_human_action() -> chex.Array:
         pressed_buttons += 1
     if pressed_buttons > 3:
         print("You have pressed a physically impossible combination of buttons")
-        return jnp.array(JAXAtariAction.NOOP)
+        return jnp.array(Action.NOOP)
 
     if keys[pygame.K_a]:
-        return jnp.array(JAXAtariAction.UPLEFT)
+        return jnp.array(Action.UPLEFT)
     if keys[pygame.K_d]:
-        return jnp.array(JAXAtariAction.UPRIGHT)
+        return jnp.array(Action.UPRIGHT)
     if keys[pygame.K_w]:
-        return jnp.array(JAXAtariAction.DOWNLEFT)
+        return jnp.array(Action.DOWNLEFT)
     if keys[pygame.K_s]:
-        return jnp.array(JAXAtariAction.DOWNRIGHT)
+        return jnp.array(Action.DOWNRIGHT)
     if keys[pygame.K_SPACE]:
-        return jnp.array(JAXAtariAction.FIRE)
-    return jnp.array(JAXAtariAction.NOOP)
+        return jnp.array(Action.FIRE)
+    return jnp.array(Action.NOOP)
 
 
 
