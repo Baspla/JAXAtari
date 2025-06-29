@@ -56,14 +56,17 @@ WHITE_KING = 3
 BLACK_KING = 4
 # endregion
 
+# region Board dimensions
+NUM_FIELDS_X = 8
+NUM_FIELDS_Y = 8
+# endregion
+
 class VideoCheckersState(NamedTuple):
     cursor_pos: chex.Array
-    board: chex.Array # Shape (32,1) for 8x8 board only black fields and 2 dimension for piece type.
+    board: chex.Array # Shape (NUM_FIELDS_Y, NUM_FIELDS_X)
 
-    turn: chex.Array
     selected_piece: chex.Array
     destination: chex.Array
-    jump_available: chex.Array
 
     animation_frame: chex.Array
 
@@ -308,15 +311,29 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             state: Initial game state.
         """
         # Initialize the board with pieces, this is a placeholder
-        # Pieces are 0 for empty, 1 for player 1 pieces, 2 for player 2 pieces, 3 for player 1 kings, 4 for player 2 kings.
-        board = jnp.zeros(32, dtype=jnp.int32)
+        board = jnp.zeros((NUM_FIELDS_X, NUM_FIELDS_Y), dtype=jnp.int32)
         # Set up the initial pieces on the board
-        # Player 1 pieces
-        board = board.at[0:8].set(1)
-        # Player 2 pieces
-        board = board.at[24:32].set(2)
+
+        board = board.at[0, 1].set(WHITE_PIECE)
+        board = board.at[0, 3].set(WHITE_PIECE)
+        board = board.at[0, 5].set(WHITE_PIECE)
+        board = board.at[0, 7].set(WHITE_PIECE)
+        board = board.at[1, 0].set(WHITE_PIECE)
+        board = board.at[1, 2].set(WHITE_PIECE)
+        board = board.at[1, 4].set(WHITE_PIECE)
+        board = board.at[1, 6].set(WHITE_PIECE)
+
+        board = board.at[6, 1].set(BLACK_PIECE)
+        board = board.at[6, 3].set(BLACK_PIECE)
+        board = board.at[6, 5].set(BLACK_PIECE)
+        board = board.at[6, 7].set(BLACK_PIECE)
+        board = board.at[7, 0].set(BLACK_PIECE)
+        board = board.at[7, 2].set(BLACK_PIECE)
+        board = board.at[7, 4].set(BLACK_PIECE)
+        board = board.at[7, 6].set(BLACK_PIECE)
+
         state = VideoCheckersState(cursor_pos=jnp.array([0, 0]), board= board,
-                                   selected_piece=jnp.array([-1, -1]), animation_frame=jnp.array(0))
+                                   selected_piece=jnp.array([-1, -1]), animation_frame=jnp.array(0), destination= jnp.array([-1, -1]))
 
 
         initial_obs = self._get_observation(state)
@@ -364,7 +381,8 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             cursor_pos=state.cursor_pos,
             board=state.board,
             selected_piece=state.selected_piece,
-            animation_frame=state.animation_frame
+            animation_frame=state.animation_frame,
+            destination=state.destination
         )
 
         done = self._get_done(new_state)
@@ -482,17 +500,19 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
         raster = aj.render_at(raster, OFFSET_X_BOARD, OFFSET_Y_BOARD, frame_bg)
 
         # Render the pieces on the board
-        # position 0 is bottom right, position 31 is top left. right to left, bottom to top
-        for i in range(32):
-            piece_type = state.board[i]
-            piece_frame = aj.get_sprite_frame(self.SPRITE_PIECES, piece_type)
-            if piece_frame is not None:
-                # Calculate the position on the board. 1 is at 1G, 2 is at 1E, 3 is at 1C, # 4 is at 1A, 5 is at 2H, 6 is at 2F, etc.
-                row = i // 4
-                col = (i % 4) * 2 + (1 if row % 2 == 0 else 0)
-                x = OFFSET_X_BOARD + 4 + col * 17
-                y = OFFSET_Y_BOARD + 2 + row * 13
-                raster = aj.render_at(raster, x, y, piece_frame)
+        # Iterate over the 8x8 board matrix
+        for row in range(NUM_FIELDS_Y):
+            for col in range(NUM_FIELDS_X):
+                piece_type = state.board[row, col]
+                piece_frame = aj.get_sprite_frame(self.SPRITE_PIECES, piece_type)
+                if piece_frame is not None and (row + col) % 2 == 1: # Only render on dark squares
+                    # Calculate the position on the board
+                    x = OFFSET_X_BOARD + 4 + col * 17
+                    y = OFFSET_Y_BOARD + 2 + row * 13
+                    raster = aj.render_at(raster, x, y, piece_frame)
+
+        # TODO: Render the cursor and selected piece
+
 
         return raster
 
