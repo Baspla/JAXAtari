@@ -20,8 +20,14 @@ def traverse_dir(root:str):
                     img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
                 print(f"Converting {file_path} to npy (shape: {img.shape})")
                 np.save(file_path.with_suffix(".npy"), img, allow_pickle=False)
+            elif file_path.suffix == ".bmp":
+                img = cv2.imread(str(file_path), cv2.IMREAD_UNCHANGED)
+                if img is not None:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGBA)
+                print(f"Converting {file_path} to npy (shape: {img.shape})")
+                np.save(file_path.with_suffix(".npy"), img, allow_pickle=False)
             else:
-                print(f"Skipping {file_path} as it is not a png file")
+                print(f"Skipping {file_path}, not a png or bmp file")
 
 if __name__ == '__main__':
     print("Converting all png files to npy in the directory")
