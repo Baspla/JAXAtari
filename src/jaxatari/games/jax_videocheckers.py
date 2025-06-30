@@ -61,24 +61,47 @@ NUM_FIELDS_X = 8
 NUM_FIELDS_Y = 8
 # endregion
 
+# Transitions between game phases
+# SELECT_PIECE -> MOVE_PIECE: # Player selects a piece to move
+# MOVE_PIECE -> SHOW_OPPONENT_MOVE: # Player moves the piece with no further jumps available
+# MOVE_PIECE -> MOVE_PIECE: # Player moves the piece with further jumps available
+# SHOW_OPPONENT_MOVE -> SELECT_PIECE: # Player makes an input to select a piece after the opponent's move
+# TODO: GAME OVER STATES
+# region Game Phases
+SELECT_PIECE = 0
+MOVE_PIECE = 1
+SHOW_OPPONENT_MOVE = 2
+GAME_OVER = 3
+# endregion
+
+class OpponentMove(NamedTuple):
+    start_pos: chex.Array  # Start position of the opponent's piece
+    end_pos: chex.Array  # End position of the opponent's piece
+    piece_type: int  # Type of the piece at the end position (king or normal)
+    captured_positions: chex.Array  # Array of positions of captured pieces
+
 class VideoCheckersState(NamedTuple):
-    cursor_pos: chex.Array
     board: chex.Array # Shape (NUM_FIELDS_Y, NUM_FIELDS_X)
+    game_phase: int
+    cursor_pos: chex.Array
 
     selected_piece: chex.Array
     destination: chex.Array
 
     animation_frame: chex.Array
+    opponent_move: OpponentMove
+    winner: int # -1 if no winner, 0 if white, 1 if black
 
 class VideoCheckersObservation(NamedTuple):
     board: chex.Array # All animation is already baked into the board observation
-    start_pos: chex.Array
-    end_pos: chex.Array
+    start_pos: chex.Array # This is for the move number display
+    end_pos: chex.Array # This is for the piece number display
+    must_jump: chex.Array # This is for the must jump display, if a jump is available
+    #TODO: rework observation to include more information, e.g. cursor position, selected piece, etc.
 
 class VideoCheckersInfo(NamedTuple):
     all_rewards: chex.Array
 
-#TODO: adjust logic to work with "we can't afford a real matrix" approach
 @partial(jax.jit, static_argnums=(0,))
 def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
     """
@@ -332,8 +355,14 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
         board = board.at[7, 4].set(BLACK_PIECE)
         board = board.at[7, 6].set(BLACK_PIECE)
 
-        state = VideoCheckersState(cursor_pos=jnp.array([0, 0]), board= board,
-                                   selected_piece=jnp.array([-1, -1]), animation_frame=jnp.array(0), destination= jnp.array([-1, -1]))
+        state = VideoCheckersState(cursor_pos=jnp.array([0, 0]), board= board, game_phase=SELECT_PIECE,
+                                   selected_piece=jnp.array([-1, -1]), animation_frame=jnp.array(0), destination= jnp.array([-1, -1]), winner= -1,
+                                      opponent_move=OpponentMove(start_pos=jnp.array([-1, -1]),
+                                                                  end_pos=jnp.array([-1, -1]),
+                                                                  piece_type=-1,
+                                                                  captured_positions=jnp.array([[-1, -1]])
+                                        ))
+
 
 
         initial_obs = self._get_observation(state)
@@ -358,7 +387,8 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
         """
         return VideoCheckersObservation(board=state.board,
                                         start_pos=state.cursor_pos,
-                                        end_pos=state.selected_piece)
+                                        end_pos=state.selected_piece,
+                                        must_jump=jnp.array(True, dtype=jnp.bool_))
         #TODO generate valid observation instead of placeholder
 
     @partial(jax.jit, static_argnums=(0,))
@@ -380,9 +410,12 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
         new_state = VideoCheckersState(
             cursor_pos=state.cursor_pos,
             board=state.board,
+            game_phase=state.game_phase,
             selected_piece=state.selected_piece,
             animation_frame=state.animation_frame,
-            destination=state.destination
+            destination=state.destination,
+            opponent_move=state.opponent_move,
+            winner=state.winner
         )
 
         done = self._get_done(new_state)
@@ -510,8 +543,15 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
                     x = OFFSET_X_BOARD + 4 + col * 17
                     y = OFFSET_Y_BOARD + 2 + row * 13
                     raster = aj.render_at(raster, x, y, piece_frame)
+                    # TODO: what could be rendered instead of game pieces?
+                    # Cursor for selecting a piece
+                    # Cursor/Piece for moving a piece
+                    # Opponents move (Opponents cursor, cursor, beaten pieces, start and end position of the move)
+
+
 
         # TODO: Render the cursor and selected piece
+
 
 
         return raster
