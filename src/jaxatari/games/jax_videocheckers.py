@@ -123,7 +123,17 @@ def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
         Returns: New state after applying the move with state.cursor_pos updated if the move was legal.
 
         """
-        possible_moves = get_possible_moves_for_piece(state.selected_piece[0], state.selected_piece[0], state)
+        cursor_on_selection = (has_selection &
+                               (state.selected_piece[0] == state.cursor_pos[0]) &
+                               (state.selected_piece[1] == state.cursor_pos[1]))
+
+        #if cursor is on selection, check in which direction it can move
+        #if cursor is no longer on selection, the only legal move is back to the selection
+        possible_moves = jax.lax.cond(cursor_on_selection,
+                                      get_possible_moves_for_piece,
+                                      lambda a,b,s: jnp.array([s.cursor_pos[0] - s.selection[0],
+                                                               s.cursor_pos[1]- s.selection[1]]),
+                                      operand=[state.selected_piece[0], state.selected_piece[1], state])
 
         # check if given move is in possible moves (either as simple or as jump)
         # compares rowwise all possible moves to input move. Returns true if for any, both movement components match
