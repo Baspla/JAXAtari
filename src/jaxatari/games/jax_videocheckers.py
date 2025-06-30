@@ -106,7 +106,7 @@ def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
         new_x = state.cursor_pos[0] + dx
         new_y = state.cursor_pos[1] + dy
         return jax.lax.cond(move_in_bounds(dx, dy, state),
-                            lambda s: s._replace(cursor_x=new_x, cursor_y=new_y),
+                            lambda s: s._replace(cursor_pos = jnp.array([new_x, new_y])),
                             lambda s: s,
                             operand=state)
 
@@ -151,7 +151,8 @@ def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
             operand=state
         )
 
-    has_selection = (state.selected_piece[0] != -1) & (state.selected_piece[0] != -1)
+    has_selection = (state.selected_piece[0] != -1) & (state.selected_piece[1] != -1)
+
     return jax.lax.cond(
         has_selection,
         handle_move_with_selection,
@@ -224,9 +225,8 @@ def move_in_bounds(dx, dy, state: VideoCheckersState):
     Returns: True, if cursor can be moved in the given direction, False otherwise.
 
     """
-    return ((state.cursor_pos[1] + dy >= 0) & (state.cursor_pos[1] + dy < NUM_FIELDS_Y) &
-            (state.cursor_pos[0] + dx >= 0) & (state.cursor_pos[0] + dx < NUM_FIELDS_X))
-
+    return ((state.cursor_pos[1] + dy >= 0) & (state.cursor_pos[1] + dy < 8) & #TODO replace magic num 8
+            (state.cursor_pos[0] + dx >= 0) & (state.cursor_pos[0] + dx < 8)) #TODO replace magic num 8
 
 @partial(jax.jit, static_argnums=(0,))
 def move_is_available(dx, dy, state: VideoCheckersState):
