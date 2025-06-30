@@ -57,12 +57,12 @@ BLACK_KING = 4
 # endregion
 
 class VideoCheckersState(NamedTuple):
-    cursor_pos: chex.Array
+    cursor_pos: chex.Array # cursor position on the board in x, y notation
     board: chex.Array # Shape (32,1) for 8x8 board only black fields and 2 dimension for piece type.
 
     turn: chex.Array
-    selected_piece: chex.Array
-    destination: chex.Array
+    selected_piece: chex.Array # position of the selected piece in x, y notation
+    destination: chex.Array # destination of the selected piece in x, y notation
     jump_available: chex.Array
 
     animation_frame: chex.Array
@@ -75,7 +75,6 @@ class VideoCheckersObservation(NamedTuple):
 class VideoCheckersInfo(NamedTuple):
     all_rewards: chex.Array
 
-#TODO: adjust logic to work with "we can't afford a real matrix" approach
 @partial(jax.jit, static_argnums=(0,))
 def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
     """
@@ -94,6 +93,16 @@ def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
     dx = jax.lax.cond(right, lambda s: 1, lambda s: -1, None)
 
     def handle_move_no_selection(dx, dy, state: VideoCheckersState):
+        """
+        Handles movement if no piece is selected. In that case, the cursor may be moved anywhere on the board.
+        Args:
+            dx: movement in x direction
+            dy: movement in y direction
+            state: current game state
+
+        Returns: new game state
+
+        """
         new_x = state.cursor_pos[0] + dx
         new_y = state.cursor_pos[1] + dy
         return jax.lax.cond(move_in_bounds(dx, dy, state),
@@ -111,16 +120,15 @@ def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
             dy: movement in y direction
             state: state of the game
 
-        Returns: New state after applying the move.
+        Returns: New state after applying the move with state.cursor_pos updated if the move was legal.
 
         """
         possible_moves = get_possible_moves_for_piece(state.selected_piece[0], state.selected_piece[0], state)
 
         # check if given move is in possible moves (either as simple or as jump)
+        # compares rowwise all possible moves to input move. Returns true if for any, both movement components match
         attempted_jump = jnp.array([dx * 2, dy * 2])
         attempted_normal_move = jnp.array([dx, dy])
-
-        # compares rowwise all possible moves to input move. Returns true if for any, both movement components match
         is_valid_jump = jnp.any(jnp.all(possible_moves == attempted_jump, axis=1))
         is_valid_normal_move = jnp.any(jnp.all(possible_moves == attempted_normal_move, axis=1))
 
@@ -155,7 +163,8 @@ def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
 @partial(jax.jit, static_argnums=(0,))
 def get_possible_moves_for_piece(x, y, state: VideoCheckersState):
     """
-    Get all possible moves for a piece at position (y,x)
+    Get all possible moves for a piece at position (y,x). Normal pieces can only move forwards.
+    King pieces may also move backwards.
     Args:
         x: x coordinate of piece
         y: y coordinate of piece
