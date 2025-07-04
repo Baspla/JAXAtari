@@ -38,7 +38,7 @@ OFFSET_X_BOARD = 12
 OFFSET_Y_BOARD = 50
 # endregion
 
-# region moves
+# region Moves
 # in (y, x) notation
 MOVES = jnp.array([
     [1, 1],  # UPRIGHT
@@ -83,8 +83,9 @@ class OpponentMove(NamedTuple):
     piece_type: int  # Type of the piece at the end position (king or normal)
     captured_positions: chex.Array  # Array of positions of captured pieces
 
+
 class VideoCheckersState(NamedTuple):
-    board: chex.Array # Shape (NUM_FIELDS_Y, NUM_FIELDS_X)
+    board: chex.Array  # Shape (NUM_FIELDS_Y, NUM_FIELDS_X)
     game_phase: int
     cursor_pos: chex.Array
 
@@ -93,17 +94,20 @@ class VideoCheckersState(NamedTuple):
 
     animation_frame: chex.Array
     opponent_move: OpponentMove
-    winner: int # -1 if no winner, 0 if white, 1 if black
+    winner: int  # -1 if no winner, 0 if white, 1 if black
+
 
 class VideoCheckersObservation(NamedTuple):
-    board: chex.Array # All animation is already baked into the board observation
-    start_pos: chex.Array # This is for the move number display
-    end_pos: chex.Array # This is for the piece number display
-    must_jump: chex.Array # This is for the must jump display, if a jump is available
-    #TODO: rework observation to include more information, e.g. cursor position, selected piece, etc.
+    board: chex.Array  # All animation is already baked into the board observation
+    start_pos: chex.Array  # This is for the move number display
+    end_pos: chex.Array  # This is for the piece number display
+    must_jump: chex.Array  # This is for the must jump display, if a jump is available
+    # TODO: rework observation to include more information, e.g. cursor position, selected piece, etc.
+
 
 class VideoCheckersInfo(NamedTuple):
     all_rewards: chex.Array
+
 
 @partial(jax.jit, static_argnums=(0,))
 def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
@@ -442,15 +446,14 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
         board = board.at[7, 4].set(BLACK_PIECE)
         board = board.at[7, 6].set(BLACK_PIECE)
 
-        state = VideoCheckersState(cursor_pos=jnp.array([0, 0]), board= board, game_phase=SELECT_PIECE,
-                                   selected_piece=jnp.array([-1, -1]), animation_frame=jnp.array(0), destination= jnp.array([-1, -1]), winner= -1,
-                                      opponent_move=OpponentMove(start_pos=jnp.array([-1, -1]),
-                                                                  end_pos=jnp.array([-1, -1]),
-                                                                  piece_type=-1,
-                                                                  captured_positions=jnp.array([[-1, -1]])
-                                        ))
-
-
+        state = VideoCheckersState(cursor_pos=jnp.array([0, 0]), board=board, game_phase=SELECT_PIECE,
+                                   selected_piece=jnp.array([-1, -1]), animation_frame=jnp.array(0),
+                                   destination=jnp.array([-1, -1]), winner=-1,
+                                   opponent_move=OpponentMove(start_pos=jnp.array([-1, -1]),
+                                                              end_pos=jnp.array([-1, -1]),
+                                                              piece_type=-1,
+                                                              captured_positions=jnp.array([[-1, -1]])
+                                                              ))
 
         initial_obs = self._get_observation(state)
 
@@ -476,7 +479,7 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
                                         start_pos=state.cursor_pos,
                                         end_pos=state.selected_piece,
                                         must_jump=jnp.array(True, dtype=jnp.bool_))
-        #TODO generate valid observation instead of placeholder
+        # TODO generate valid observation instead of placeholder
 
     @partial(jax.jit, static_argnums=(0,))
     def step(self, state: VideoCheckersState, action: chex.Array) -> Tuple[
@@ -541,7 +544,7 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
         Args:
             previous_state: The previous game state.
         """
-        return 0 # TODO: Implement environment reward logic
+        return 0  # TODO: Implement environment reward logic
 
     @partial(jax.jit, static_argnums=(0,))
     def _get_all_reward(self, previous_state: VideoCheckersState, state: VideoCheckersState):
@@ -585,7 +588,7 @@ def load_sprites():
     SPRITE_PIECES = aj.load_and_pad_digits(os.path.join(MODULE_DIR, "sprites/videocheckers/pieces/{}.npy"),
                                            num_chars=7)
     SPRITE_TEXT = aj.load_and_pad_digits(os.path.join(MODULE_DIR, "sprites/videocheckers/text/{}.npy"),
-                                          num_chars=12)
+                                         num_chars=12)
 
     return (
         SPRITE_BG,
@@ -625,7 +628,7 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
             for col in range(NUM_FIELDS_X):
                 piece_type = state.board[row, col]
                 piece_frame = aj.get_sprite_frame(self.SPRITE_PIECES, piece_type)
-                if piece_frame is not None and (row + col) % 2 == 1: # Only render on dark squares
+                if piece_frame is not None and (row + col) % 2 == 1:  # Only render on dark squares
                     # Calculate the position on the board
                     x = OFFSET_X_BOARD + 4 + col * 17
                     y = OFFSET_Y_BOARD + 2 + row * 13
@@ -635,11 +638,7 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
                     # Cursor/Piece for moving a piece
                     # Opponents move (Opponents cursor, cursor, beaten pieces, start and end position of the move)
 
-
-
         # TODO: Render the cursor and selected piece
-
-
 
         return raster
 
@@ -682,7 +681,6 @@ def get_human_action() -> chex.Array:
     if keys[pygame.K_SPACE]:
         return jnp.array(Action.FIRE)
     return jnp.array(Action.NOOP)
-
 
 
 if __name__ == "__main__":
