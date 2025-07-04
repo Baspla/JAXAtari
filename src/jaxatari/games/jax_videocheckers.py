@@ -74,6 +74,9 @@ SHOW_OPPONENT_MOVE = 2
 GAME_OVER = 3
 # endregion
 
+MAX_PIECES = 12
+
+
 class OpponentMove(NamedTuple):
     start_pos: chex.Array  # Start position of the opponent's piece
     end_pos: chex.Array  # End position of the opponent's piece
@@ -292,7 +295,18 @@ def move_is_available(dx, dy, state: VideoCheckersState):
 
 
 @partial(jax.jit, static_argnums=(0,))  # TODO
-def select_tile(select_action, state: VideoCheckersState) -> VideoCheckersState:
+def select_tile(state: VideoCheckersState) -> VideoCheckersState:
+    """
+    Handles Action.FIRE events, where a piece or a tile is being selected.
+    For
+    Assumes that the cursor is in a legal position.
+    Args:
+        state: current gamestate.
+
+    Returns: New gamestate with the effects of the action applied.
+
+    """
+
     """
     no selection, jump available, own piece with jump -> update state
     no selection, jump available, own piece w/o jump -> nothing
@@ -306,6 +320,76 @@ def select_tile(select_action, state: VideoCheckersState) -> VideoCheckersState:
 
     empty or enemy piece -> nothing
     """
+    select_piece_phase = state.game_phase == SELECT_PIECE
+
+    def handle_select_piece_phase():
+        movable_pieces = get_movable_pieces(1, state)  # TODO how to pass information on whose turn it is?
+        cursor_on_movable_piece = jnp.any(jnp.all(movable_pieces == state.cursor_pos, axis=1))
+
+        new_state = jax.lax.cond(
+            select_piece_phase & cursor_on_movable_piece,
+            lambda s: s._replace(selected_piece=state.cursor_pos),
+            lambda s: s,
+            operand=state
+        )
+        return new_state
+
+    def handle_move_piece_phase():
+        cursor_on_selected_piece = jnp.all(state.selected_piece == state.cursor_pos)
+
+        return jax.lax.cond(
+            cursor_on_selected_piece,
+            lambda s: s._replace(selected_piece=jnp.array([-1, -1])),  # deselect piece
+            lambda s: s._replace(destination=state.cursor_pos),  # set move destination
+
+        )
+
+    return jax.lax.cond(
+        select_piece_phase,
+        handle_select_piece_phase,
+        handle_move_piece_phase
+    )
+
+
+def get_movable_pieces(colour, state: VideoCheckersState):
+    """
+    For the given colour, return the position of pieces that can perform a legal move. This method therefore enforces
+    the "must jump if possible" rule, returning only the positions of pieces with a jump available.
+    Args:
+        colour: Piece's colour
+        state: Current state of the game
+
+    Returns: Array of size (MAX_PIECES, 2), containing the positions of pieces that can perform a legal move. If no legal
+    move is available for a piece, it is instead padded with [-1, -1].
+    """
+    own_pieces = jax.lax.cond(colour == 1, lambda s: [WHITE_PIECE, WHITE_KING], lambda s: [BLACK_PIECE, BLACK_KING])
+    own_pieces_mask = jnp.zeros_like(state.board, dtype=bool)
+    for piece in own_pieces:
+        own_pieces_mask |= (state.board == piece)
+
+    # get positions of own pieces. static output shape, which is required for jit compilation.
+    rows, cols = jnp.where(own_pieces_mask, size=MAX_PIECES, fill_value=-1)
+    positions = jnp.stack([rows, cols], axis=1)
+
+    # vectorise function and apply to all positions
+    vmapped_get_possible_moves = jax.vmap(get_possible_moves_for_piece, in_axes=(0, 0))
+    all_possible_moves = vmapped_get_possible_moves(positions[:, 0], positions[:, 1], state)
+
+    # masks for each piece
+    can_move_mask = jnp.any(all_possible_moves != 0, axis=(1, 2))  # any move available
+    can_jump_mask = jnp.any(jnp.all(jnp.abs(all_possible_moves) == 2, axis=2), axis=1)  # jump available
+    any_jump_available = jnp.any(can_jump_mask)
+
+    movable_mask = jnp.where(any_jump_available, can_jump_mask,
+                             can_move_mask)  # this is just an if statement (cond, x ,y)
+
+    movable_positions = jnp.where(
+        movable_mask[:, None],  # Reshape mask to (MAX_PIECES, 1) for broadcasting
+        positions,
+        jnp.array([-1, -1])
+    )
+
+    return movable_positions
 
 
 class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservation, VideoCheckersInfo]):
