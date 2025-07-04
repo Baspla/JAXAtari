@@ -187,46 +187,49 @@ def get_possible_moves_for_piece(x, y, state: VideoCheckersState):
         y: y coordinate of piece
         state: current game state
 
-    Returns: array of all possible moves.
+    Returns: array of all possible moves. If a move in a given direction is not possible, it returns [0,0]
     """
 
     current_piece = state.board[y, x]
-    dy_forward = jax.lax.cond(state.turn == WHITE_PIECE, lambda s: 1, lambda s: -1, operand=None)
-    piece_is_king = (current_piece == WHITE_KING) | (current_piece == BLACK_KING)
+    is_not_a_piece = (current_piece == EMPTY_TILE) | (y == -1)
 
-    def check_move(move):
-        dy, dx = move
+    def _get_moves():
+        def check_move(move):
+            dy, dx = move
 
-        is_forward = (dy == dy_forward)
-        can_move_in_direction = jax.lax.cond(piece_is_king, lambda s: True, lambda s: is_forward, operand=None)
+            piece = state.board[y, x]
+            piece_is_king = (current_piece == WHITE_KING) | (current_piece == BLACK_KING)
 
-        def get_valid_moves_for_direction():
-            jump_available = move_is_available(2 * dx, 2 * dy, state)  # check jump
-            move_available = move_is_available(dx, dy, state)  # check normal move
+            dy_forward = jax.lax.cond(piece == WHITE_PIECE | piece == WHITE_KING, lambda s: 1, lambda s: -1,
+                                      operand=None)
+            is_forward = (dy == dy_forward)
+            can_move_in_direction = piece_is_king | is_forward
 
-            # Return jump move if available, else normal move if available, else [0,0]
-            return jax.lax.cond(
-                jump_available,
-                lambda s: move * 2,
-                lambda s: jax.lax.cond(
-                    move_available,
-                    lambda s: move,
-                    lambda s: jnp.array([0, 0]),
-                    operand=None),
-                operand=None
-            )
+            def get_valid_move_for_direction():
+                jump_available = move_is_available(2 * dx, 2 * dy, state)  # check jump
+                move_available = move_is_available(dx, dy, state)  # check normal move
 
-        return jax.lax.cond(can_move_in_direction,
-                            get_valid_moves_for_direction,
-                            lambda s: jnp.array([0, 0]),
-                            operand=None)
+                # Return jump move if available, else normal move if available, else [0,0]
+                return jax.lax.cond(
+                    jump_available,
+                    lambda s: move * 2,
+                    lambda s: jax.lax.cond(
+                        move_available,
+                        lambda s: move,
+                        lambda s: jnp.array([0, 0]),
+                        operand=None),
+                    operand=None
+                )
 
-    possible_moves = jax.vmap(check_move)(MOVES)
+            return jax.lax.cond(can_move_in_direction,
+                                get_valid_move_for_direction,
+                                lambda s: jnp.array([0, 0]),
+                                operand=None)
 
-    # Filter out zero moves ([0,0]) - keep only valid moves
-    valid_moves = possible_moves[jnp.any(possible_moves != 0, axis=1)]
+        possible_moves = jax.vmap(check_move)(MOVES)
+        return possible_moves
 
-    return valid_moves
+    return jax.lax.cond(is_not_a_piece, lambda s: jnp.zeros((4, 2)), _get_moves, operand=None)
 
 
 @partial(jax.jit, static_argnums=(0,))
