@@ -147,7 +147,7 @@ def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
         Returns: New state after applying the move.
 
         """
-        possible_moves = get_possible_moves_for_piece(state.selected_piece[0], state.selected_piece[0], state)
+        possible_moves = get_possible_moves_for_piece(state.selected_piece, state)
 
         # check if given move is in possible moves (either as simple or as jump)
         attempted_jump = jnp.array([dx * 2, dy * 2])
@@ -186,17 +186,17 @@ def move_step(move_action, state: VideoCheckersState) -> VideoCheckersState:
 
 
 @partial(jax.jit, static_argnums=(0,))
-def get_possible_moves_for_piece(x, y, state: VideoCheckersState):
+def get_possible_moves_for_piece(position, state: VideoCheckersState):
     """
     Get all possible moves for a piece at position (y,x)
     Args:
-        x: x coordinate of piece
-        y: y coordinate of piece
+        position: array containing x,y coordinates in that order
         state: current game state
 
     Returns: array of all possible moves. If a move in a given direction is not possible, it returns [0,0]
     """
 
+    x, y = position[0], position[1]
     current_piece = state.board[y, x]
     is_not_a_piece = (current_piece == EMPTY_TILE) | (y == -1)
 
@@ -376,8 +376,8 @@ def get_movable_pieces(colour, state: VideoCheckersState):
     positions = jnp.stack([rows, cols], axis=1)
 
     # vectorise function and apply to all positions
-    vmapped_get_possible_moves = jax.vmap(get_possible_moves_for_piece, in_axes=(0, 0))
-    all_possible_moves = vmapped_get_possible_moves(positions[:, 0], positions[:, 1], state)
+    vmapped_get_possible_moves = jax.vmap(get_possible_moves_for_piece, in_axes=(0, None))
+    all_possible_moves = vmapped_get_possible_moves(positions, state)
 
     # masks for each piece
     can_move_mask = jnp.any(all_possible_moves != 0, axis=(1, 2))  # any move available
