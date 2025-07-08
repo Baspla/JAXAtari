@@ -131,8 +131,7 @@ def get_possible_moves_for_piece(position, state: VideoCheckersState):
             piece = state.board[y, x]
             piece_is_king = (current_piece == WHITE_KING) | (current_piece == BLACK_KING)
 
-            dy_forward = jax.lax.cond(piece == WHITE_PIECE | piece == WHITE_KING, lambda s: 1, lambda s: -1,
-                                      operand=None)
+            dy_forward = jax.lax.cond(piece == WHITE_PIECE | piece == WHITE_KING, lambda: 1, lambda: -1)
             is_forward = (dy == dy_forward)
             can_move_in_direction = piece_is_king | is_forward
 
@@ -160,7 +159,7 @@ def get_possible_moves_for_piece(position, state: VideoCheckersState):
         possible_moves = jax.vmap(check_move)(MOVES)
         return possible_moves
 
-    return jax.lax.cond(is_not_a_piece, lambda s: jnp.zeros((4, 2)), _get_moves, operand=None)
+    return jax.lax.cond(is_not_a_piece, lambda: jnp.zeros((4, 2)), _get_moves)
 
 
 @partial(jax.jit, static_argnums=(0,))
@@ -223,14 +222,15 @@ def move_is_available(dx, dy, state: VideoCheckersState):
 
 def is_movable_piece(colour, position, state: VideoCheckersState):
     """
+    check if position is in return set of get_movable_pieces. This is used to check if a piece can be selected in the select piece phase.
     Args:
         colour: Colour of the side to check for. 0 for white, 1 for black.
         position: Position of the piece to check
         state: Current state of the game
     Returns: True, if the piece is movable, False otherwise.
     """
-    # TODO: Implement function to check if a piece is movable
-    return True
+    movable_pieces = get_movable_pieces(colour, state)
+    return jnp.any(jnp.all(movable_pieces == position, axis=1))
 
 def get_movable_pieces(colour, state: VideoCheckersState):
     """
@@ -498,7 +498,7 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
         # Switch between game phases to choose which function handles the step
         # So separate function for each game phase
         new_state = jax.lax.cond(
-            state.frame_counter == 15,
+            state.frame_counter == 59,
             lambda _: jax.lax.cond(
                 state.game_phase == SELECT_PIECE_PHASE,
                 lambda s: self.step_select_piece_phase(s, action),
