@@ -54,6 +54,8 @@ WHITE_PIECE = 1
 BLACK_PIECE = 2
 WHITE_KING = 3
 BLACK_KING = 4
+WHITE_CURSOR = 5
+BLACK_CURSOR = 6
 # endregion
 
 # region Board dimensions
@@ -621,24 +623,38 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
 
         frame_bg = aj.get_sprite_frame(self.SPRITE_BG, 0)
         raster = aj.render_at(raster, OFFSET_X_BOARD, OFFSET_Y_BOARD, frame_bg)
+        jax.debug.print("Cursor position: {state.cursor_pos}", state=state)
+        def render_pieces_on_board(state, raster):
+            def render_piece(row, col, raster):
+                # If the cursor is on the current piece, use the cursor sprite
+                piece_type = jax.lax.cond(
+                    jnp.all(state.cursor_pos == jnp.array([row, col])),
+                    lambda _: WHITE_CURSOR,
+                    lambda _: state.board[row, col],
+                    None
+                )
 
-        # Render the pieces on the board
-        # Iterate over the 8x8 board matrix
-        for row in range(NUM_FIELDS_Y):
-            for col in range(NUM_FIELDS_X):
-                piece_type = state.board[row, col]
                 piece_frame = aj.get_sprite_frame(self.SPRITE_PIECES, piece_type)
-                if piece_frame is not None and (row + col) % 2 == 1:  # Only render on dark squares
-                    # Calculate the position on the board
-                    x = OFFSET_X_BOARD + 4 + col * 17
-                    y = OFFSET_Y_BOARD + 2 + row * 13
-                    raster = aj.render_at(raster, x, y, piece_frame)
-                    # TODO: what could be rendered instead of game pieces?
-                    # Cursor for selecting a piece
-                    # Cursor/Piece for moving a piece
-                    # Opponents move (Opponents cursor, cursor, beaten pieces, start and end position of the move)
+                return jax.lax.cond(
+                    (piece_frame is not None) & ((row + col) % 2 == 1),  # Only render on dark squares
+                    lambda _: aj.render_at(
+                        raster,
+                        OFFSET_X_BOARD + 4 + col * 17,  # Calculate the position on the board
+                        OFFSET_Y_BOARD + 2 + row * 13,
+                        piece_frame,
+                    ),
+                    lambda _: raster,
+                    None,
+                )
 
-        # TODO: Render the cursor and selected piece
+            def render_row(row, raster):
+                return jax.lax.fori_loop(
+                    0, NUM_FIELDS_X, lambda col, raster: render_piece(row, col, raster), raster
+                )
+
+            return jax.lax.fori_loop(0, NUM_FIELDS_Y, render_row, raster)
+
+        raster = render_pieces_on_board(state, raster)
 
         return raster
 
