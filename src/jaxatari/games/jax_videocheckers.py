@@ -287,7 +287,6 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             Action.DOWNRIGHT,
             Action.DOWNLEFT
         }
-        # TODO: Nachfragen ob NOOP Action benötigt wird
 
     def reset(self, key: jax.random.PRNGKey = jax.random.PRNGKey(187)) -> Tuple[
         VideoCheckersObservation, VideoCheckersState]:
@@ -403,10 +402,12 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             """
             Moves the cursor based on the action taken.
             """
+            jax.debug.print("Moving cursor with action: {action}", action=action)
             up = jnp.logical_or(action == Action.UPLEFT, action == Action.UPRIGHT)
             right = jnp.logical_or(action == Action.DOWNRIGHT, action == Action.UPRIGHT)
+            jax.debug.print("Up: {up}, Right: {right}", up=up, right=right)
 
-            dy = jax.lax.cond(up, lambda: 1, lambda: -1)
+            dy = jax.lax.cond(up, lambda: -1, lambda: 1)
             dx = jax.lax.cond(right, lambda: 1, lambda: -1)
 
             new_cursor_pos = state.cursor_pos + jnp.array([dx, dy])
@@ -456,7 +457,7 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             def _place_piece(state: VideoCheckersState) -> VideoCheckersState:
                 piece = state.board.at[state.selected_piece]
                 move = state.cursor_pos - state.selected_piece
-                jumped = jnp.abs(move[0]) > 2 & jnp.abs(move[1]) > 2
+                jumped = (jnp.abs(move[0]) > 2) & (jnp.abs(move[1]) > 2)
 
                 # move piece
                 new_board = (state.board
@@ -489,14 +490,15 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             )
 
 
-        new_state = jax.lax.cond(
+        """new_state = jax.lax.cond(
             action == Action.FIRE,
             lambda s: place_piece(s),
             lambda s: move_piece(s, action),
             operand=state
         )
-
-        return new_state
+        
+        return new_state"""
+        return state
 
 
     def step_show_opponent_move_phase(self, state: VideoCheckersState, action: chex.Array) -> VideoCheckersState:
@@ -510,12 +512,9 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             VideoCheckersState: The new game state after the action.
         """
         new_state = jax.lax.cond(
-            action == Action.NOOP,
+            action == Action.FIRE,
             lambda s: s,  # No action taken, return the same state
-            lambda s: jax.lax.cond(
-                lambda s: s._replace(game_phase=SELECT_PIECE_PHASE),
-                operand=s
-            ),
+            lambda s: s, operand=state
         )
 
         return new_state
@@ -549,7 +548,7 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
         # Switch between game phases to choose which function handles the step
         # So separate function for each game phase
         new_state = jax.lax.cond(
-            state.frame_counter == 59,
+            (state.frame_counter == 59) & (action != Action.NOOP),
             lambda _: jax.lax.cond(
                 state.game_phase == SELECT_PIECE_PHASE,
                 lambda s: self.step_select_piece_phase(s, action),
@@ -685,10 +684,12 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
 
         frame_bg = aj.get_sprite_frame(self.SPRITE_BG, 0)
         raster = aj.render_at(raster, OFFSET_X_BOARD, OFFSET_Y_BOARD, frame_bg)
+        """
         jax.debug.print("Cursor position: {state.cursor_pos}", state=state)
         jax.debug.print("Phase: {state.game_phase}", state=state)
         jax.debug.print("Selected piece: {state.selected_piece}", state=state)
         jax.debug.print("Destination: {state.destination}", state=state)
+        """
 
         def determine_piece_type_select_phase(row, col, state):
             """
