@@ -389,41 +389,26 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             piece = state.board[y, x]
             # check if the piece is not empty and belongs to the current player
             return jax.lax.cond(
-                (piece != EMPTY_TILE) & is_movable_piece(0, state.cursor_pos, state),
-                lambda _: state._replace(
-                    selected_piece=state.cursor_pos,
+                (piece != EMPTY_TILE) & is_movable_piece(0, state.cursor_pos, state), #TODO pass correct colour parameter
+                lambda s: s._replace(
+                    selected_piece=s.cursor_pos,
                     game_phase=MOVE_PIECE_PHASE,
                     destination=jnp.array([-1, -1]),  # Reset destination
                 ),
-                lambda _: state,
-                operand=None
+                lambda s: s,
+                operand=state
             )
 
         def move_cursor(state: VideoCheckersState, action: chex.Array) -> VideoCheckersState:
             """
             Moves the cursor based on the action taken.
             """
-            dx, dy = jax.lax.cond(
-                action == Action.UPRIGHT,
-                lambda _: (1, -1),
-                lambda _: jax.lax.cond(
-                    action == Action.UPLEFT,
-                    lambda _: (-1, -1),
-                    lambda _: jax.lax.cond(
-                        action == Action.DOWNRIGHT,
-                        lambda _: (1, 1),
-                        lambda _: jax.lax.cond(
-                            action == Action.DOWNLEFT,
-                            lambda _: (-1, 1),
-                            lambda _: (0, 0),  # Default case if no movement
-                            operand=None
-                        ),
-                        operand=None
-                    ),
-                    operand=None
-                ),
-                operand=None
-            )
+            up = jnp.logical_or(action == Action.UPLEFT, action == Action.UPRIGHT)
+            right = jnp.logical_or(action == Action.DOWNRIGHT, action == Action.UPRIGHT)
+
+            dy = jax.lax.cond(up, lambda: 1, lambda: -1)
+            dx = jax.lax.cond(right, lambda: 1, lambda: -1)
+
             new_cursor_pos = state.cursor_pos + jnp.array([dx, dy])
             # Check if the new position is within bounds
             in_bounds = move_in_bounds(dx, dy, state)
@@ -434,7 +419,6 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
                 operand=None
             )
             return state._replace(cursor_pos=new_cursor_pos)
-
 
         new_state = jax.lax.cond(
             action == Action.FIRE,
