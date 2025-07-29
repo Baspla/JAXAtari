@@ -232,7 +232,7 @@ def is_movable_piece(colour, position, state: VideoCheckersState):
     movable_pieces = get_movable_pieces(colour, state)
     return jnp.isin(position, movable_pieces, assume_unique=True).any()
 
-def get_movable_pieces(colour, state: VideoCheckersState):
+def get_movable_pieces(colour, state: VideoCheckersState) -> jnp.ndarray:
     """
     For the given colour, return the position of pieces that can perform a legal move. This method therefore enforces
     the "must jump if possible" rule, returning only the positions of pieces with a jump available.
@@ -464,10 +464,46 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             Places the selected piece at the destination and updates the game phase.
             Updating the game phase can be:
             A. If no further jumps are available, change to SHOW_OPPONENT_MOVE_PHASE.
-            B. If further jumps are available, stay in MOVE_PIECE_PHASE but the selected piece moved piece and the destination is reset to [-1, -1].
+            B. If further jumps are available, stay in MOVE_PIECE_PHASE but the destination is reset to [-1, -1].
             Or if the piece has not been moved (put back down), return to the select piece phase.
             """
-            return state
+            cursor_on_selected_piece = jnp.all(state.selected_piece == state.cursor_pos)
+
+            def _place_piece(state: VideoCheckersState) -> VideoCheckersState:
+                piece = state.board.at[state.selected_piece]
+                move = state.cursor_pos - state.selected_piece
+                jumped = jnp.abs(move[0]) > 2 & jnp.abs(move[1]) > 2
+
+                # move piece
+                new_board = (state.board
+                             .at[state.selected_piece].set(EMPTY_TILE)
+                             .at[state.cursor_pos].set(piece))
+
+                # get new state
+                new_state = state._replace(board=new_board,
+                                           destination=state.cursor_pos)
+
+                # check for moved piece if jumps are available from new pos
+                new_moves = get_possible_moves_for_piece(state.destination, new_state)
+                move_distances = jnp.abs(new_moves - state.destination)  # Shape: (n_moves, 2)
+                max_distances = jnp.max(move_distances, axis=1)  # Max distance per move
+                has_jump_from_new_pos = jnp.any(max_distances > 1)
+
+                # stay in same phase and reselect piece if jumped and can continue jumping, change phase if not
+                return jax.lax.cond(
+                    jumped & has_jump_from_new_pos,
+                    lambda s: s._replace(selected_piece=s.destination), #TODO check if resetting destination to -1 -1 is necessary if can make another jump
+                    lambda s: s._replace(game_phase=SHOW_OPPONENT_MOVE_PHASE),
+                    new_state
+                )
+
+            return jax.lax.cond(
+                cursor_on_selected_piece,
+                lambda s: s._replace(selected_piece=jnp.array([-1, -1]), game_phase=SELECT_PIECE_PHASE),  # deselect piece
+                lambda s: _place_piece(s),  # move piece + side effects
+                state
+            )
+
 
         new_state = jax.lax.cond(
             action == Action.FIRE,

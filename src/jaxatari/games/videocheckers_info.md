@@ -47,7 +47,7 @@ Wie bei der klassischen Dame muss ein Spielstein geschlagen werden,
 wenn ein Stein über ihn auf ein dahinter liegendes freies Feld springen kann.
 Dabei herrscht Schlagzwang, ein Stein muss also geschlagen werden,
 wenn dies möglich ist. Sind nach dem Schlagen weitere Schlagzüge möglich, 
-müssen diese auch ausgeführt werden.
+müssen diese auch ausgeführt werden. DAS GILT ABER NUR FÜR DEN INITIAL VERWENDETEN STEIN 
 Der König kann anders als beim klassischen Damespiel ebenfalls nur über
 ein Feld schlagen, dabei jedoch vorwärts wie rückwärts ziehen.
 Hat ein Spieler mehrere Schlagmöglichkeiten, darf er wählen, welche er nutzt,
