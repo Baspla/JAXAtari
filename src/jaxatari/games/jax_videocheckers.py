@@ -5,6 +5,7 @@ import jax.lax
 import jax.numpy as jnp
 import chex
 import pygame
+from pyparsing import empty
 
 from jaxatari.environment import JAXAtariAction as Action
 
@@ -72,6 +73,16 @@ SELECT_PIECE_PHASE = 0
 MOVE_PIECE_PHASE = 1
 SHOW_OPPONENT_MOVE_PHASE = 2
 GAME_OVER_PHASE = 3
+# endregion
+
+# region rendering constants
+# Constants for rendering
+ANIMATION_FRAME_RATE = 60  # Frames per second
+# endregion
+
+# region Colours
+COLOUR_WHITE = 0
+COLOUR_BLACK = 1
 # endregion
 
 MAX_PIECES = 12
@@ -229,7 +240,9 @@ def is_movable_piece(colour, position, state: VideoCheckersState):
         state: Current state of the game
     Returns: True, if the piece is movable, False otherwise.
     """
+    jax.debug.print("Checking if position {position} is movable for colour {colour}", position=position, colour=colour)
     movable_pieces = get_movable_pieces(colour, state)
+    jax.debug.print("Movable pieces for colour {colour}: {movable_pieces}", colour=colour, movable_pieces=movable_pieces)
     return jnp.isin(position, movable_pieces, assume_unique=True).any()
 
 def get_movable_pieces(colour, state: VideoCheckersState) -> jnp.ndarray:
@@ -243,7 +256,7 @@ def get_movable_pieces(colour, state: VideoCheckersState) -> jnp.ndarray:
     Returns: Array of size (MAX_PIECES, 2), containing the positions of pieces that can perform a legal move. If no legal
     move is available for a piece, it is instead padded with [-1, -1].
     """
-    own_pieces = jax.lax.cond(colour == 1, lambda s: [WHITE_PIECE, WHITE_KING], lambda s: [BLACK_PIECE, BLACK_KING],operand=None)
+    own_pieces = jax.lax.cond(colour == COLOUR_WHITE, lambda s: [WHITE_PIECE, WHITE_KING], lambda s: [BLACK_PIECE, BLACK_KING],operand=None)
     own_pieces_mask = jnp.zeros_like(state.board, dtype=bool)
     for piece in own_pieces:
         own_pieces_mask |= (state.board == piece)
@@ -384,11 +397,10 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             """
             Selects a piece at the current cursor position and changes the game phase to MOVE_PIECE_PHASE.
             """
-            x, y = state.cursor_pos
-            piece = state.board[y, x]
-            # check if the piece is not empty and belongs to the current player
+            row,col = state.cursor_pos
+            piece = state.board[row, col]
             return jax.lax.cond(
-                (piece != EMPTY_TILE) & is_movable_piece(0, state.cursor_pos, state), #TODO pass correct colour parameter
+                (piece != EMPTY_TILE) & is_movable_piece(COLOUR_BLACK, state.cursor_pos, state),
                 lambda s: s._replace(
                     selected_piece=s.cursor_pos,
                     game_phase=MOVE_PIECE_PHASE,
@@ -402,23 +414,22 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             """
             Moves the cursor based on the action taken.
             """
-            jax.debug.print("Moving cursor with action: {action}", action=action)
             up = jnp.logical_or(action == Action.UPLEFT, action == Action.UPRIGHT)
             right = jnp.logical_or(action == Action.DOWNRIGHT, action == Action.UPRIGHT)
-            jax.debug.print("Up: {up}, Right: {right}", up=up, right=right)
 
-            dy = jax.lax.cond(up, lambda: -1, lambda: 1)
-            dx = jax.lax.cond(right, lambda: 1, lambda: -1)
+            drow = jax.lax.cond(up, lambda _: -1, lambda _: 1, operand=None)  # -1 for up, 1 for down
+            dcol = jax.lax.cond(right, lambda _: 1, lambda _: -1, operand=None)  # 1 for right, -1 for left
 
-            new_cursor_pos = state.cursor_pos + jnp.array([dx, dy])
+            new_cursor_pos = state.cursor_pos + jnp.array([drow, dcol])
             # Check if the new position is within bounds
-            in_bounds = move_in_bounds(dx, dy, state)
+            in_bounds = move_in_bounds(drow, dcol, state)
             new_cursor_pos = jax.lax.cond(
                 in_bounds,
                 lambda _: new_cursor_pos,
                 lambda _: state.cursor_pos,
                 operand=None
             )
+            jax.debug.print("New cursor position row: {new_cursor_pos[0]}, col: {new_cursor_pos[1]}", new_cursor_pos=new_cursor_pos)
             return state._replace(cursor_pos=new_cursor_pos)
 
         new_state = jax.lax.cond(
@@ -498,6 +509,8 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
         )
         
         return new_state"""
+
+        jax.debug.print("Cursor position: {state.cursor_pos} ; Selected piece position: {state.selected_piece}", state=state)
         return state
 
 
@@ -551,25 +564,25 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
             (state.frame_counter == 59) & (action != Action.NOOP),
             lambda _: jax.lax.cond(
                 state.game_phase == SELECT_PIECE_PHASE,
-                lambda s: self.step_select_piece_phase(s, action),
-                lambda s: jax.lax.cond(
-                    s.game_phase == MOVE_PIECE_PHASE,
-                    lambda s: self.step_move_piece_phase(s, action),
-                    lambda s: jax.lax.cond(
-                        s.game_phase == SHOW_OPPONENT_MOVE_PHASE,
-                        lambda s: self.step_show_opponent_move_phase(s, action),
-                        lambda s: self.step_game_over_phase(s, action),
-                        operand=s
+                lambda _: self.step_select_piece_phase(state, action),
+                lambda _: jax.lax.cond(
+                    state.game_phase == MOVE_PIECE_PHASE,
+                    lambda _: self.step_move_piece_phase(state, action),
+                    lambda _: jax.lax.cond(
+                        state.game_phase == SHOW_OPPONENT_MOVE_PHASE,
+                        lambda _: self.step_show_opponent_move_phase(state, action),
+                        lambda _: self.step_game_over_phase(state, action),
+                        operand=None
                     ),
-                    operand=s
+                    operand=None
                 ),
-                operand=state
+                operand=None
             ),
             lambda _: state,
             operand=None
         )
 
-        new_state = new_state._replace(frame_counter=(new_state.frame_counter + 1) % 60)
+        new_state = new_state._replace(frame_counter=(new_state.frame_counter + 1) % ANIMATION_FRAME_RATE)
 
         done = self._get_done(new_state)
         env_reward = self._get_env_reward(state, new_state)
@@ -694,7 +707,7 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
         def determine_piece_type_select_phase(row, col, state):
             """
             Determines the piece type to render in the select piece phase.
-            This means rendering a cursor if frame_counter is under 15 (half)
+            This means rendering a cursor if frame_counter is under half
             Args:
                 row: Row index of the piece.
                 col: Column index of the piece.
@@ -703,14 +716,76 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
                 The piece type to render.
             """
             return jax.lax.cond(
-                (state.frame_counter < 30) & (state.cursor_pos[0] == col) & (state.cursor_pos[1] == row),
+                (state.frame_counter < (ANIMATION_FRAME_RATE/2)) & (state.cursor_pos[0] == row) & (state.cursor_pos[1] == col),
                 lambda _: BLACK_CURSOR,
                 lambda _: state.board[row, col],
                 operand=None
             )
 
         def determine_piece_type_move_phase(row, col, state):
-            return state.board[row, col]
+            """
+            Determines the piece type to render in the move piece phase.
+            We have a selected piece and destination.
+            if the destination is on the selected piece the piece should be fast blinking (render the piece sprite if frame_counter is not 5 to 10 or 15 to 20)
+            if the destination is not on the selected piece we have two animation states. one for < 30 and one for >= 30.
+            all pieces on the board should be rendered as normal. exceptions are only the selected piece and the destination.
+            for the < 30 state, the selected piece should be rendered as BLACK_CURSOR and the destination as the selected pieces tile sprite.
+            For the >= 30 state, the selected piece should be rendered as its original sprite and the destination as nothing (empty tile).
+            if the piece to be determined is not the selected piece or destination, it should be rendered as normal.
+            Args:
+                row: Row index of the piece.
+                col: Column index of the piece.
+                state: Current game state.
+            Returns:
+                The piece type to render.
+            """
+            is_selected_piece = jnp.all(state.selected_piece == jnp.array([row, col]))
+            is_cursor_pos = jnp.all(state.cursor_pos == jnp.array([row, col]))
+            is_unmoved = jnp.all(is_selected_piece & is_cursor_pos)
+
+            def f_umoved(_):
+                # If the piece is unmoved, blink fast
+                return jax.lax.cond(
+                    (state.frame_counter % 5 < 2) | (state.frame_counter % 5 > 3),
+                    lambda _: EMPTY_TILE,
+                    lambda _: state.board[row, col],
+                    operand=None
+                )
+
+            def f_selected(_):
+                # If the piece is selected, render it as BLACK_CURSOR if frame_counter < 30, else render it as its original sprite
+                return jax.lax.cond(
+                    state.frame_counter < (ANIMATION_FRAME_RATE / 2),
+                    lambda _: BLACK_CURSOR,
+                    lambda _: state.board[row, col],
+                    operand=None
+                )
+
+            def f_destination(_):
+                # If the piece is the destination, render it as the selected piece's tile sprite if frame_counter < 30, else render it as EMPTY_TILE
+                return jax.lax.cond(
+                    state.frame_counter < (ANIMATION_FRAME_RATE / 2),
+                    lambda _: state.board[state.selected_piece[1], state.selected_piece[0]],  # Use selected piece's tile sprite
+                    lambda _: EMPTY_TILE,
+                    operand=None
+                )
+
+            return jax.lax.cond(
+                is_unmoved,
+                f_umoved,
+                lambda _: jax.lax.cond(
+                    is_selected_piece,
+                    f_selected,
+                    lambda _: jax.lax.cond(
+                        is_cursor_pos,
+                        f_destination,
+                        lambda _: state.board[row, col],
+                        operand=None
+                    ),
+                    operand=None
+                ),
+                operand=None)
+
 
         def determine_piece_type_show_opponent_move_phase(row, col, state):
             return state.board[row, col]
