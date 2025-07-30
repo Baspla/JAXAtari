@@ -132,24 +132,24 @@ def get_possible_moves_for_piece(position, state: VideoCheckersState):
     Returns: array of all possible moves. If a move in a given direction is not possible, it returns [0,0]
     """
 
-    x, y = position[0], position[1]
-    current_piece = state.board[y, x]
-    is_not_a_piece = (current_piece == EMPTY_TILE) | (y == -1)
+    row, col = position[0], position[1]
+    current_piece = state.board[row, col]
+    is_not_a_piece = (current_piece == EMPTY_TILE) | (row == -1)
 
     def _get_moves():
         def check_move(move):
-            dy, dx = move
+            drow, dcol = move
 
-            piece = state.board[y, x]
+            piece = state.board[row, col]
             piece_is_king = (current_piece == WHITE_KING) | (current_piece == BLACK_KING)
 
             dy_forward = jax.lax.cond((piece == WHITE_PIECE) | (piece == WHITE_KING), lambda: 1, lambda: -1)
-            is_forward = (dy == dy_forward)
+            is_forward = (drow == dy_forward)
             can_move_in_direction = piece_is_king | is_forward
 
             def get_valid_move_for_direction():
-                jump_available = move_is_available(2 * dx, 2 * dy, state)  # check jump
-                move_available = move_is_available(dx, dy, state)  # check normal move
+                jump_available = move_is_available(row=row,col=col,drow=2 * drow, dcol=2 * dcol, state=state)  # check jump
+                move_available = move_is_available(row=row,col=col,drow=drow, dcol=dcol, state=state)  # check normal move
 
                 # Return jump move if available, else normal move if available, else [0,0]
                 return jax.lax.cond(
@@ -173,10 +173,12 @@ def get_possible_moves_for_piece(position, state: VideoCheckersState):
     return jax.lax.cond(is_not_a_piece, lambda: jnp.zeros((4, 2), dtype=jnp.int32), _get_moves)
 
 @partial(jax.jit, static_argnums=(0,))
-def move_in_bounds(drow, dcol, state: VideoCheckersState):
+def move_in_bounds(row,col,drow, dcol, state: VideoCheckersState):
     """
-    Checks if cursor can be moved in the given direction.
+    Checks if move can be made in the given direction.
     Args:
+        row: row index of the piece
+        col: column index of the piece
         drow: movement in y direction
         dcol: movement in x direction
         state: state of the game, containing current cursor position.
@@ -185,41 +187,43 @@ def move_in_bounds(drow, dcol, state: VideoCheckersState):
 
     """
     return (jnp.logical_and(
-        (0 <= state.cursor_pos[0] + drow),
-        (state.cursor_pos[0] + drow < NUM_FIELDS_Y)
+        (0 <= row + drow),
+        (row + drow < NUM_FIELDS_Y)
     ) & jnp.logical_and(
-        (0 <= state.cursor_pos[1] + dcol),
-        (state.cursor_pos[1] + dcol < NUM_FIELDS_X)
+        (0 <= col + dcol),
+        (col + dcol < NUM_FIELDS_X)
     ))
 
 @partial(jax.jit, static_argnums=(0,))
-def move_is_available(dx, dy, state: VideoCheckersState):
+def move_is_available(row,col,drow, dcol, state: VideoCheckersState):
     """
     Checks if a piece can be moved in the given direction. Checks for both, simple moves and jumps.
     Args:
-        dx: movement in x direction
-        dy: movement in y direction
+        row: row index of the piece
+        col: column index of the piece
+        drow: movement in y direction
+        dcol: movement in x direction
         state: state of the game, containing position of the current piece and the board-state.
 
     Returns:
         True, if a piece can be moved in the given direction, False otherwise.
     """
-    landing_in_bounds = move_in_bounds(dy, dx, state)
-    x, y, board = state.cursor_pos[0], state.cursor_pos[1], state.board
+    landing_in_bounds = move_in_bounds(row=row, col=col, drow=drow, dcol=dcol, state=state)
+    board = state.board
 
     def handle_jump():
         """
         Handle moves with |dx|=2 and |dy|=2
         Returns: True if that movement is available, False otherwise.
         """
-        own_colour = state.board[y, x]
-        jumped_x = x + (dx // 2)
-        jumped_y = y + (dy // 2)
+        own_colour = state.board[row, col]
+        jumped_col = col + (dcol // 2)
+        jumped_row = row + (drow // 2)
         return jax.lax.cond(
             landing_in_bounds,
-            lambda s: (board[jumped_y, jumped_x] != EMPTY_TILE) &  # jumped-tile is not empty
-                      (board[jumped_y, jumped_x] != own_colour) &  # jumped-tile is not of same colour
-                      (board[y + 2 * dy, x + 2 * dx] == EMPTY_TILE),  # landing tile is empty
+            lambda s: (board[jumped_row, jumped_col] != EMPTY_TILE) &  # jumped-tile is not empty
+                      (board[jumped_row, jumped_col] != own_colour) &  # jumped-tile is not of same colour
+                      (board[row + 2 * drow, col + 2 * dcol] == EMPTY_TILE),  # landing tile is empty
             lambda s: False,
             operand=None
         )
@@ -229,9 +233,9 @@ def move_is_available(dx, dy, state: VideoCheckersState):
         Handle moves with |dx|=1 and |dy|=1
         Returns: True if that movement is available, False otherwise.
         """
-        return landing_in_bounds & (board[y + dy, x + dx] == EMPTY_TILE)
+        return landing_in_bounds & (board[row + drow, col + dcol] == EMPTY_TILE)
 
-    is_jump = (jnp.abs(dx) == 2) & (jnp.abs(dy) == 2)
+    is_jump = (jnp.abs(dcol) == 2) & (jnp.abs(drow) == 2)
     return jax.lax.cond(is_jump, handle_jump, handle_move)
 
 def is_movable_piece(colour, position, state: VideoCheckersState):
@@ -270,9 +274,14 @@ def get_movable_pieces(colour, state: VideoCheckersState) -> jnp.ndarray:
     rows, cols = jnp.where(own_pieces_mask, size=MAX_PIECES, fill_value=-1)
     positions = jnp.stack([rows, cols], axis=1)
 
+    jax.debug.print("Positions of own pieces: {positions}", positions=positions)
+    # DEBUG NOTES: positions works correctly
+
     # vectorise function and apply to all positions
     vmapped_get_possible_moves = jax.vmap(get_possible_moves_for_piece, in_axes=(0, None))
     all_possible_moves = vmapped_get_possible_moves(positions, state)
+
+    jax.debug.print("All possible moves for all pieces: {all_possible_moves}", all_possible_moves=all_possible_moves)
 
     # masks for each piece
     can_move_mask = jnp.any(all_possible_moves != 0, axis=(1, 2))  # any move available
@@ -466,7 +475,11 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
 
             new_cursor_pos = state.cursor_pos + jnp.array([drow, dcol])
             # Check if the new position is within bounds
-            in_bounds = move_in_bounds(drow, dcol, state)
+            in_bounds = move_in_bounds(row=state.cursor_pos[0],
+                                       col=state.cursor_pos[1],
+                                       drow=drow,
+                                       dcol=dcol,
+                                       state=state)
             new_cursor_pos = jax.lax.cond(
                 in_bounds,
                 lambda _: new_cursor_pos,
