@@ -247,9 +247,7 @@ def is_movable_piece(colour, position, state: VideoCheckersState):
         state: Current state of the game
     Returns: True, if the piece is movable, False otherwise.
     """
-    jax.debug.print("Checking if position {position} is movable for colour {colour}", position=position, colour=colour)
     movable_pieces = get_movable_pieces(colour, state)
-    jax.debug.print("Movable pieces for colour {colour}: {movable_pieces}", colour=colour, movable_pieces=movable_pieces)
     is_movable = jnp.any(jnp.all(movable_pieces == position, axis=1))
     jax.debug.print("Is position {position} movable: {is_movable}", position=position, is_movable=is_movable)
     return is_movable
@@ -378,14 +376,26 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
                                                                   ))"""
 
         # Debug state show opponent move phase
-        """state = VideoCheckersState(cursor_pos=jnp.array([4, 1]), board=board, game_phase=SHOW_OPPONENT_MOVE_PHASE,
+        testboard = jnp.zeros((NUM_FIELDS_Y, NUM_FIELDS_X), dtype=jnp.int32)
+        testboard = testboard.at[1, 0].set(WHITE_PIECE)
+        testboard = testboard.at[2, 1].set(BLACK_PIECE)
+        testboard = testboard.at[4, 3].set(BLACK_PIECE)
+        testboard = testboard.at[6, 5].set(BLACK_PIECE)
+        testboard = testboard.at[0,1].set(WHITE_PIECE)
+        testboard = testboard.at[0,3].set(WHITE_PIECE)
+        testboard = testboard.at[0,5].set(WHITE_PIECE)
+        testboard = testboard.at[0,7].set(WHITE_PIECE)
+        testboard = testboard.at[7,0].set(BLACK_PIECE)
+        testboard = testboard.at[7,2].set(BLACK_PIECE)
+        testboard = testboard.at[6,1].set(BLACK_PIECE)
+        state = VideoCheckersState(cursor_pos=jnp.array([4, 3]), board=testboard, game_phase=SHOW_OPPONENT_MOVE_PHASE,
                                       selected_piece=jnp.array([-1, -1]), frame_counter=jnp.array(0),
                                       destination=jnp.array([-1, -1]), winner=-1, additional_jump=False,
-                                      opponent_move=OpponentMove(start_pos=jnp.array([5, 0]),
-                                                                  end_pos=jnp.array([4, 1]),
-                                                                  piece_type=BLACK_PIECE,
-                                                                  captured_positions=jnp.array([[5, 0]])
-                                                                  ))"""
+                                      opponent_move=OpponentMove(start_pos=jnp.array([1, 0]),
+                                                                  end_pos=jnp.array([7, 6]),
+                                                                  piece_type=WHITE_KING,
+                                                                  captured_positions=jnp.array([[2, 1], [4, 3], [6, 5]])
+                                                                  ))
 
         # Debug state game over phase
         """state = VideoCheckersState(cursor_pos=jnp.array([4, 1]), board=board, game_phase=GAME_OVER_PHASE,
@@ -844,10 +854,64 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
 
 
         def determine_piece_type_show_opponent_move_phase(row, col, state):
-            return state.board[row, col]
+            """
+            Determines the piece type to render in the show opponent move phase.
+            We have two animation states. one for < 30, let call it "before move" and one for >= 30, let call it "after move".
+            In the "before move" state, the opponent_move.start_pos should be rendered as WHITE_CURSOR and the opponent_move.end_pos as an empty tile.
+            The captured positions should be rendered as their original piece type.
+            In the "after move" state, the opponent_move.start_pos should be rendered as an empty tile, the opponent_move.end_pos as the opponent_move.piece_type and the captured positions as BLACK_CURSOR.
+            Args:
+                row: Row index of the piece.
+                col: Column index of the piece.
+                state: Current game state.
+            Returns:
+                The piece type to render.
+            """
+
+            is_start_pos = jnp.all(state.opponent_move.start_pos == jnp.array([row, col]))
+            is_end_pos = jnp.all(state.opponent_move.end_pos == jnp.array([row, col]))
+            is_captured_pos = jnp.any(jnp.all(state.opponent_move.captured_positions == jnp.array([row, col]), axis=1))
+
+            def f_before_move(s):
+                return jax.lax.cond(
+                    is_start_pos,
+                    lambda _: WHITE_CURSOR,
+                    lambda _: jax.lax.cond(
+                        is_end_pos,
+                        lambda _: EMPTY_TILE,
+                        lambda _: s.board[row, col],
+                        operand=s
+                    ),
+                    operand=s
+                )
+
+            def f_after_move(s):
+                return jax.lax.cond(
+                    is_start_pos,
+                    lambda _: EMPTY_TILE,
+                    lambda s: jax.lax.cond(
+                        is_end_pos,
+                        lambda _: state.opponent_move.piece_type,  # Render end position as the opponent's piece type
+                        lambda s: jax.lax.cond(
+                            is_captured_pos,
+                            lambda _: BLACK_CURSOR,  # Render captured positions as BLACK_CURSOR
+                            lambda s: s.board[row, col],
+                            operand=s
+                        ),
+                        operand=s
+                    ),
+                    operand=s
+                )
+
+            return jax.lax.cond(
+                state.frame_counter < (ANIMATION_FRAME_RATE / 2),
+                f_before_move,
+                f_after_move,
+                operand=state
+            )
 
         def determine_piece_type_game_over_phase(row, col, state):
-            return state.board[row, col]
+            return state.board[row, col] # TODO
 
         def render_pieces_on_board(state, raster):
             def render_piece(row, col, raster):
