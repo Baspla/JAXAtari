@@ -590,10 +590,38 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
         Returns:
             VideoCheckersState: The new game state after the action.
         """
+        def apply_opponent_move(state: VideoCheckersState) -> VideoCheckersState:
+            """
+            Applies the opponent's move to the game state.
+            """
+            # Get the opponent's move
+            opponent_move = state.opponent_move
+
+            # Update the board with the opponent's move
+            new_board = state.board.at[tuple(opponent_move.start_pos)].set(EMPTY_TILE)
+            new_board = new_board.at[tuple(opponent_move.end_pos)].set(opponent_move.piece_type)
+
+            # Remove captured pieces from the board
+            new_board = jax.lax.fori_loop(
+                0,
+                opponent_move.captured_positions.shape[0],
+                lambda i, board: board.at[tuple(opponent_move.captured_positions[i])].set(EMPTY_TILE),
+                new_board
+            )
+
+            # Update the game state with the new board and reset cursor position
+            return state._replace(
+                board=new_board,
+                game_phase=SELECT_PIECE_PHASE,  # Change phase back to select piece phase
+                selected_piece=jnp.array([-1, -1]),  # Reset selected piece
+                destination=jnp.array([-1, -1])  # Reset destination
+            )
+
         new_state = jax.lax.cond(
-            action == Action.FIRE,
+            action == Action.NOOP,
             lambda s: s,  # No action taken, return the same state
-            lambda s: s, operand=state
+            apply_opponent_move,
+            operand=state
         )
 
         return new_state
@@ -911,6 +939,7 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
             )
 
         def determine_piece_type_game_over_phase(row, col, state):
+            # TODO This is either like the show opponent move phase or showing the last move of the player.
             return state.board[row, col] # TODO
 
         def render_pieces_on_board(state, raster):
