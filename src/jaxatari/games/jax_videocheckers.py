@@ -77,7 +77,7 @@ GAME_OVER_PHASE = 3
 
 # region rendering constants
 # Constants for rendering
-ANIMATION_FRAME_RATE = 5  # Frames per second
+ANIMATION_FRAME_RATE = 6 if os.environ.get("JAX_DISABLE_JIT") == "1" else 60  # Workaround for JAX disabling JIT compilation
 # endregion
 
 # region Colours
@@ -643,9 +643,8 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
                     cursor_pos=state.cursor_pos)
 
                 # move piece
-                new_board = state.board.copy()
-                new_board = new_board.at[state.selected_piece].set(EMPTY_TILE)
-                new_board = new_board.at[state.cursor_pos].set(piece_type)
+                new_board = state.board.at[tuple(state.selected_piece)].set(EMPTY_TILE)
+                new_board = new_board.at[tuple(state.cursor_pos)].set(piece_type)
 
                 # get new state
                 new_state = state._replace(board=new_board)
@@ -759,7 +758,7 @@ class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservati
         # Switch between game phases to choose which function handles the step
         # So separate function for each game phase
         new_state = jax.lax.cond(
-            (state.frame_counter == 59) & (action != Action.NOOP),
+            (state.frame_counter == (ANIMATION_FRAME_RATE-1)) & (action != Action.NOOP),
             lambda _: jax.lax.cond(
                 state.game_phase == SELECT_PIECE_PHASE,
                 lambda _: self.step_select_piece_phase(state, action),
