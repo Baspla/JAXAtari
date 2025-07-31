@@ -4,14 +4,12 @@ from typing import NamedTuple, Tuple
 import jax.lax
 import jax.numpy as jnp
 import chex
-import pygame
-from pyparsing import empty
 
-from jaxatari.environment import JAXAtariAction as Action
 
-from jaxatari.renderers import AtraJaxisRenderer
-from jaxatari.rendering import atraJaxis as aj
-from jaxatari.environment import JaxEnvironment
+import jaxatari.spaces as spaces
+from jaxatari.renderers import JAXGameRenderer
+from jaxatari.rendering import jax_rendering_utils as jr
+from jaxatari.environment import JaxEnvironment, JAXAtariAction as Action
 
 #
 # by Tim Morgner and Jan Larionow
@@ -87,6 +85,9 @@ COLOUR_BLACK = 1
 
 MAX_PIECES = 12
 
+class VideoCheckersConstants(NamedTuple):
+    TODO=1
+    #TODO
 
 class OpponentMove(NamedTuple):
     start_pos: chex.Array  # Start position of the opponent's piece
@@ -302,7 +303,7 @@ def get_movable_pieces(colour, state: VideoCheckersState) -> jnp.ndarray:
     return movable_positions
 
 
-class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservation, VideoCheckersInfo]):
+class JaxVideoCheckers(JaxEnvironment[VideoCheckersState, VideoCheckersObservation, VideoCheckersInfo,VideoCheckersConstants]):
     def __init__(self, reward_funcs: list[callable] = None):
         super().__init__()
         self.frame_stack_size = 4
@@ -854,13 +855,13 @@ def load_sprites():
     """
     MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-    background = aj.loadFrame(os.path.join(MODULE_DIR, "sprites/videocheckers/background.npy"), transpose=True)
+    background = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/videocheckers/background.npy"), transpose=True)
 
     # Convert all sprites to the expected format (add frame dimension)
     SPRITE_BG = jnp.expand_dims(background, axis=0)
-    SPRITE_PIECES = aj.load_and_pad_digits(os.path.join(MODULE_DIR, "sprites/videocheckers/pieces/{}.npy"),
+    SPRITE_PIECES = jr.load_and_pad_digits(os.path.join(MODULE_DIR, "sprites/videocheckers/pieces/{}.npy"),
                                            num_chars=7)
-    SPRITE_TEXT = aj.load_and_pad_digits(os.path.join(MODULE_DIR, "sprites/videocheckers/text/{}.npy"),
+    SPRITE_TEXT = jr.load_and_pad_digits(os.path.join(MODULE_DIR, "sprites/videocheckers/text/{}.npy"),
                                          num_chars=12)
 
     return (
@@ -870,7 +871,7 @@ def load_sprites():
     )
 
 
-class VideoCheckersRenderer(AtraJaxisRenderer):
+class VideoCheckersRenderer(JAXGameRenderer):
     def __init__(self):
         super().__init__()
         (
@@ -892,8 +893,8 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
         """
         raster: jnp.ndarray = jnp.full((WIDTH, HEIGHT, 3), jnp.array([160, 96, 64], dtype=jnp.uint8))
 
-        frame_bg = aj.get_sprite_frame(self.SPRITE_BG, 0)
-        raster = aj.render_at(raster, OFFSET_X_BOARD, OFFSET_Y_BOARD, frame_bg)
+        frame_bg = jr.get_sprite_frame(self.SPRITE_BG, 0)
+        raster = jr.render_at(raster, OFFSET_X_BOARD, OFFSET_Y_BOARD, frame_bg)
         """
         jax.debug.print("Cursor position: {state.cursor_pos}", state=state)
         jax.debug.print("Phase: {state.game_phase}", state=state)
@@ -1065,10 +1066,10 @@ class VideoCheckersRenderer(AtraJaxisRenderer):
                     operand=None
                 )
 
-                piece_frame = aj.get_sprite_frame(self.SPRITE_PIECES, piece_type)
+                piece_frame = jr.get_sprite_frame(self.SPRITE_PIECES, piece_type)
                 return jax.lax.cond(
                     (piece_frame is not None) & ((row + col) % 2 == 1),  # Only render on dark squares
-                    lambda _: aj.render_at(
+                    lambda _: jr.render_at(
                         raster,
                         OFFSET_X_BOARD + 4 + col * 17,  # Calculate the position on the board
                         OFFSET_Y_BOARD + 2 + row * 13,
