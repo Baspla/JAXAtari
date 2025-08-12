@@ -53,10 +53,11 @@ class WizardOfWorConstants(NamedTuple):
         """
         return jax.lax.cond(
             gameboard == 1,
-            lambda _: (WizardOfWorConstants.GAMEBOARD_1_WALLS_HORIZONTAL, WizardOfWorConstants.GAMEBOARD_1_WALLS_VERTICAL),
+            lambda _: (
+                WizardOfWorConstants.GAMEBOARD_1_WALLS_HORIZONTAL, WizardOfWorConstants.GAMEBOARD_1_WALLS_VERTICAL),
             lambda _: (jnp.zeros((5, 11), dtype=jnp.int32), jnp.zeros((6, 10), dtype=jnp.int32)),
             operand=None
-        )# Hier können weitere Gameboards hinzugefügt werden
+        )  # Hier können weitere Gameboards hinzugefügt werden
 
 
 class EntityPosition(NamedTuple):
@@ -88,9 +89,9 @@ class WizardOfWorState(NamedTuple):
     lives: int
 
 
-def updateState(state: WizardOfWorState, player: EntityPosition = None, enemies: chex.Array = None,
-                gameboard: int = None, bullet: EntityPosition = None, score: chex.Array = None,
-                lives: int = None) -> WizardOfWorState:
+def update_state(state: WizardOfWorState, player: EntityPosition = None, enemies: chex.Array = None,
+                 gameboard: int = None, bullet: EntityPosition = None, score: chex.Array = None,
+                 lives: int = None) -> WizardOfWorState:
     """
     Aktualisiert den Zustand des Spiels. Nur diese Methode sollte verwendet werden, um das State Objekt zu mutieren.
     Nicht übergebene Parameter werden aus dem aktuellen Zustand übernommen.
@@ -117,7 +118,7 @@ class JaxWizardOfWor(JaxEnvironment[WizardOfWorState, WizardOfWorObservation, Wi
     def __init__(self, consts: WizardOfWorConstants = None, reward_funcs: list[callable] = None):
         consts = consts or WizardOfWorConstants()
         super().__init__(consts)
-        self.renderer = WizardOfWorRenderer(self.consts)
+        self.renderer = WizardOfWorRenderer(consts=consts)
         if reward_funcs is not None:
             reward_funcs = tuple(reward_funcs)
         self.reward_funcs = reward_funcs
@@ -146,17 +147,17 @@ class JaxWizardOfWor(JaxEnvironment[WizardOfWorState, WizardOfWorObservation, Wi
     def step(self, state: WizardOfWorState, action: chex.Array) -> Tuple[
         WizardOfWorObservation, WizardOfWorState, chex.Array, chex.Array, WizardOfWorInfo]:
         new_state = previous_state = state
-        new_state = self._step_level_change(new_state)
-        new_state = self._step_respawn(new_state, action)
-        new_state = self._step_player_movement(new_state, action)
-        new_state = self._step_bullet_movement(new_state)
-        new_state = self._step_enemy_movement(new_state)
-        new_state = self._step_collision_detection(new_state)
-        done = self._get_done(new_state)
-        env_reward = self._get_reward(previous_state, new_state)
-        all_rewards = self._get_all_reward(previous_state, new_state)
-        info = self._get_info(new_state, all_rewards)
-        observation = self._get_observation(new_state)
+        new_state = self._step_level_change(state=new_state)
+        new_state = self._step_respawn(state=new_state, action=action)
+        new_state = self._step_player_movement(state=new_state, action=action)
+        new_state = self._step_bullet_movement(state=new_state)
+        new_state = self._step_enemy_movement(state=new_state)
+        new_state = self._step_collision_detection(state=new_state)
+        done = self._get_done(state=new_state)
+        env_reward = self._get_reward(previous_state=previous_state, state=new_state)
+        all_rewards = self._get_all_reward(previous_state=previous_state, state=new_state)
+        info = self._get_info(state=new_state, all_rewards=all_rewards)
+        observation = self._get_observation(state=new_state)
 
         return observation, new_state, env_reward, done, info
 
@@ -254,39 +255,80 @@ class JaxWizardOfWor(JaxEnvironment[WizardOfWorState, WizardOfWorObservation, Wi
     def _step_collision_detection(self, state):
         return state
 
+
 class WizardOfWorRenderer(JAXGameRenderer):
     def __init__(self, consts: WizardOfWorConstants = None):
         super().__init__()
         self.consts = consts or WizardOfWorConstants()
         # Placeholder: Sprites laden
-        self.SPRITE_BG = jnp.zeros((1, self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH, 3), dtype=jnp.uint8)
+        self.SPRITE_BG = jnp.zeros(shape=(1, self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH, 3), dtype=jnp.uint8)
 
     @partial(jax.jit, static_argnums=(0,))
     def render(self, state: WizardOfWorState):
         # Raster initialisieren
         raster = jr.create_initial_frame(width=self.consts.WINDOW_WIDTH, height=self.consts.WINDOW_HEIGHT)
-        raster = self._render_gameboard(raster, state)
-        raster = self._render_enemies(raster, state)
-        raster = self._render_bullet(raster, state)
-        raster = self._render_player(raster, state)
-        raster = self._render_score(raster, state)
-        raster = self._render_lives(raster, state)
+        raster = self._render_gameboard(raster=raster, state=state)
+        raster = self._render_enemies(raster=raster, state=state)
+        raster = self._render_bullet(raster=raster, state=state)
+        raster = self._render_player(raster=raster, state=state)
+        raster = self._render_score(raster=raster, state=state)
+        raster = self._render_lives(raster=raster, state=state)
         return raster
 
-    def _render_gameboard(self, raster, state:WizardOfWorState):
+    def _render_gameboard(self, raster, state: WizardOfWorState):
         # Placeholder: Hintergrund und Wände zeichnen
 
         def _render_gameboard_background(raster):
             # Hintergrund zeichnen
             return raster
 
-        def _render_gameboard_walls(raster, gamestate: WizardOfWorState):
+        def _render_gameboard_walls(raster, state: WizardOfWorState):
             # Wände zeichnen basierend auf dem Gameboard
-            walls_horizontal, walls_vertical = self.consts.get_walls_for_gameboard(gameboard=gamestate.gameboard)
-            return raster
+            walls_horizontal, walls_vertical = self.consts.get_walls_for_gameboard(gameboard=state.gameboard)
 
-        _render_gameboard_background(raster)
-        _render_gameboard_walls(raster, state)
+            def _render_horizontal_wall(raster, x, y, walls):
+                return raster
+
+            def _render_vertical_wall(raster, x, y, walls):
+                return raster
+
+            # Use vmapping to draw walls
+            def vmap_draw_horizontal_walls(x, y, value, raster):
+                return jax.lax.cond(
+                    value == 1,
+                    lambda r: _render_horizontal_wall(r, x, y, raster),
+                    lambda r: r,
+                    raster
+                )
+            def vmap_draw_vertical_walls(x, y, value, raster):
+                return jax.lax.cond(
+                    value == 1,
+                    lambda r: _render_vertical_wall(r, x, y, raster),
+                    lambda r: r,
+                    raster
+                )
+
+
+            # Flatten the walls arrays to iterate over them
+            # The tiling and repeating could maybe be done once for efficiency
+            walls_horizontal_flat = walls_horizontal.flatten()
+            walls_horizontal_x_coord_flat = jnp.tile(jnp.arange(walls_horizontal.shape[1]), walls_horizontal.shape[0])
+            walls_horizontal_y_coord_flat = jnp.repeat(jnp.arange(walls_horizontal.shape[0]), walls_horizontal.shape[1])
+            new_raster = jax.vmap(vmap_draw_horizontal_walls, in_axes=(0, 0, 0, None))(
+                walls_horizontal_x_coord_flat, walls_horizontal_y_coord_flat, walls_horizontal_flat, raster
+            )
+
+            walls_vertical_flat = walls_vertical.flatten()
+            walls_vertical_x_coord_flat = jnp.tile(jnp.arange(walls_vertical.shape[1]), walls_vertical.shape[0])
+            walls_vertical_y_coord_flat = jnp.repeat(jnp.arange(walls_vertical.shape[0]), walls_vertical.shape[1])
+            new_raster = jax.vmap(vmap_draw_vertical_walls, in_axes=(0, 0, 0, None))(
+                walls_vertical_x_coord_flat, walls_vertical_y_coord_flat, walls_vertical_flat, new_raster
+            )
+
+            return new_raster
+
+        _render_gameboard_background(raster=raster)
+        _render_gameboard_walls(raster=raster, state=state)
         return raster
 
     def _render_enemies(self, raster, state):
