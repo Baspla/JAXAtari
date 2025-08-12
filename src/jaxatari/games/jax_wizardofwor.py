@@ -45,6 +45,21 @@ class WizardOfWorConstants(NamedTuple):
 
     # IMPORTANT: About the coordinates
     # The board goes from 0,0 (top-left) to 60,110 (bottom-right)
+
+    # CODE PATTERN:
+    #
+    # 2d_array_flat = 2d_array.flatten()
+    # 2d_array_x_coord_flat = jnp.tile(jnp.arange(2d_array.shape[1]), 2d_array.shape[0])
+    # 2d_array_y_coord_flat = jnp.repeat(jnp.arange(2d_array.shape[0]), 2d_array.shape[1])
+    # new_output = jax.vmap(vmap_function, in_axes=(0, 0, 0, None))(
+    #     2d_array_x_coord_flat, 2d_array_y_coord_flat, 2d_array_flat, old_output
+    # )
+    #
+    # Use this pattern instead of x y nested for-loops.
+
+
+
+
     @staticmethod
     def get_walls_for_gameboard(gameboard: int) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """    Placeholder: Gibt die Wände für das angegebene Gameboard zurück.
