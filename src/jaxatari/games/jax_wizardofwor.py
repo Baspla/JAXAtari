@@ -23,6 +23,7 @@ class WizardOfWorConstants(NamedTuple):
     PLAYER_SIZE: Tuple[int, int] = (8, 8)
     ENEMY_SIZE: Tuple[int, int] = (8, 8)
     BULLET_SIZE: Tuple[int, int] = (2, 2)
+    TILE_SIZE: Tuple[int, int] = (8, 8)  # Größe eines Tiles auf dem Gameboard
     WALL_THICKNESS: int = 2
     GAMEBOARD_1_WALLS_HORIZONTAL = jnp.array([
         [0, 1, 1, 0, 0, 1, 0, 0, 1, 1, 0],
@@ -43,6 +44,11 @@ class WizardOfWorConstants(NamedTuple):
     LEFT: int = Action.LEFT
     RIGHT: int = Action.RIGHT
 
+    STEP_SIZE: int = 1  # Schrittgröße für Bewegungen
+
+    BOARD_POSITION: Tuple[int, int] = (0, 0)
+    GAME_AREA_OFFSET: Tuple[int, int] = (BOARD_POSITION[0] + WALL_THICKNESS, BOARD_POSITION[1] + WALL_THICKNESS)
+
     # IMPORTANT: About the coordinates
     # The board goes from 0,0 (top-left) to 60,110 (bottom-right)
 
@@ -56,9 +62,6 @@ class WizardOfWorConstants(NamedTuple):
     # )
     #
     # Use this pattern instead of x y nested for-loops.
-
-
-
 
     @staticmethod
     def get_walls_for_gameboard(gameboard: int) -> Tuple[jnp.ndarray, jnp.ndarray]:
@@ -275,19 +278,69 @@ class WizardOfWorRenderer(JAXGameRenderer):
     def __init__(self, consts: WizardOfWorConstants = None):
         super().__init__()
         self.consts = consts or WizardOfWorConstants()
-        # Placeholder: Sprites laden
-        self.SPRITE_BG = jnp.zeros(shape=(1, self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH, 3), dtype=jnp.uint8)
+        (
+            self.SPRITE_BG,
+            self.SPRITE_PLAYER,
+            self.SPRITE_ENEMY,
+            self.SPRITE_BULLET,
+            self.SCORE_DIGIT_SPRITES,
+            self.SPRITE_WALL_HORIZONTAL,
+            self.SPRITE_WALL_VERTICAL,
+            self.SPRITE_RADAR_BLIP,
+        ) = self.load_sprites()
+
+    def load_sprites(self):
+        MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+        bg = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/background.npy"))
+        player = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/player.npy"))
+        enemy = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/enemy.npy"))
+        bullet = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/bullet.npy"))
+        wall_horizontal = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/wall_horizontal.npy"))
+        wall_vertical = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/wall_vertical.npy"))
+        radar_blip = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/radar_blip.npy"))
+
+        SPRITE_BG = jnp.expand_dims(bg, axis=0)
+        SPRITE_PLAYER = jnp.expand_dims(player, axis=0)
+        SPRITE_ENEMY = jnp.expand_dims(enemy, axis=0)
+        SPRITE_BULLET = jnp.expand_dims(bullet, axis=0)
+        SPRITE_WALL_HORIZONTAL = jnp.expand_dims(wall_horizontal, axis=0)
+        SPRITE_WALL_VERTICAL = jnp.expand_dims(wall_vertical, axis=0)
+        SPRITE_RADAR_BLIP = jnp.expand_dims(radar_blip, axis=0)
+
+        SCORE_DIGIT_SPRITES = jr.load_and_pad_digits(
+            os.path.join(MODULE_DIR, "sprites/pong/player_score_{}.npy"),
+            num_chars=10,
+        )
+
+        return (
+            SPRITE_BG,
+            SPRITE_PLAYER,
+            SPRITE_ENEMY,
+            SPRITE_BULLET,
+            SCORE_DIGIT_SPRITES,
+            SPRITE_WALL_HORIZONTAL,
+            SPRITE_WALL_VERTICAL,
+            SPRITE_RADAR_BLIP,
+        )
 
     @partial(jax.jit, static_argnums=(0,))
     def render(self, state: WizardOfWorState):
         # Raster initialisieren
         raster = jr.create_initial_frame(width=self.consts.WINDOW_WIDTH, height=self.consts.WINDOW_HEIGHT)
+        jax.debug.print("Raster shape: {shape}", shape=raster.shape)
         raster = self._render_gameboard(raster=raster, state=state)
+        jax.debug.print("Raster after gameboard rendering: {shape}", shape=raster.shape)
         raster = self._render_enemies(raster=raster, state=state)
         raster = self._render_bullet(raster=raster, state=state)
         raster = self._render_player(raster=raster, state=state)
         raster = self._render_score(raster=raster, state=state)
         raster = self._render_lives(raster=raster, state=state)
+
+        raster = raster.at[10:20, 10:20].set(self.consts.PLAYER_COLOR)
+        raster = raster.at[10:20, 30:40].set(self.consts.ENEMY_COLOR)
+        raster = raster.at[20:80, 20:30].set(self.consts.BULLET_COLOR)
+
         return raster
 
     def _render_gameboard(self, raster, state: WizardOfWorState):
@@ -301,50 +354,100 @@ class WizardOfWorRenderer(JAXGameRenderer):
             # Wände zeichnen basierend auf dem Gameboard
             walls_horizontal, walls_vertical = self.consts.get_walls_for_gameboard(gameboard=state.gameboard)
 
-            def _render_horizontal_wall(raster, x, y, walls):
-                return raster
+            def _render_horizontal_wall(raster, x: int, y: int, is_wall: int):
+                def _get_raster_x_for_horizontal_wall(x):
+                    return self.consts.GAME_AREA_OFFSET[0] + (
+                                x * (self.consts.WALL_THICKNESS + self.consts.TILE_SIZE[0]))
 
-            def _render_vertical_wall(raster, x, y, walls):
-                return raster
+                def _get_raster_y_for_horizontal_wall(y):
+                    return self.consts.GAME_AREA_OFFSET[1] + self.consts.TILE_SIZE[1] +  (
+                                y * (self.consts.WALL_THICKNESS + self.consts.TILE_SIZE[1]))
 
-            # Use vmapping to draw walls
-            def vmap_draw_horizontal_walls(x, y, value, raster):
-                return jax.lax.cond(
-                    value == 1,
-                    lambda r: _render_horizontal_wall(r, x, y, raster),
-                    lambda r: r,
-                    raster
+                jax.debug.print("Rendering horizontal wall at ({x}, {y}) on raster ({rasterX}, {rasterY})",
+                                x=x, y=y,
+                                rasterX=_get_raster_x_for_horizontal_wall(x),
+                                rasterY=_get_raster_y_for_horizontal_wall(y))
+                # TODO: Check ob is_wall. Bisher entfernt da es Error geworfen hat.
+                return jr.render_at(
+                    raster=raster,
+                    sprite_frame=jr.get_sprite_frame(self.SPRITE_WALL_HORIZONTAL, 0),
+                    x=_get_raster_x_for_horizontal_wall(x),
+                    y=_get_raster_y_for_horizontal_wall(y)
                 )
-            def vmap_draw_vertical_walls(x, y, value, raster):
-                return jax.lax.cond(
-                    value == 1,
-                    lambda r: _render_vertical_wall(r, x, y, raster),
-                    lambda r: r,
-                    raster
+
+            def _render_vertical_wall(raster, x, y, is_wall):
+                def _get_raster_x_for_vertical_wall(x):
+                    return self.consts.GAME_AREA_OFFSET[0] + self.consts.TILE_SIZE[0] + (
+                        x * (self.consts.WALL_THICKNESS + self.consts.TILE_SIZE[0]))
+
+                def _get_raster_y_for_vertical_wall(y):
+                    return self.consts.GAME_AREA_OFFSET[1] + (
+                        y * (self.consts.WALL_THICKNESS + self.consts.TILE_SIZE[1]))
+
+                jax.debug.print("Rendering vertical wall at ({x}, {y}) on raster ({rasterX}, {rasterY})",
+                                x=x, y=y,
+                                rasterX=_get_raster_x_for_vertical_wall(x),
+                                rasterY=_get_raster_y_for_vertical_wall(y))
+                return jr.render_at(
+                    raster=raster,
+                    sprite_frame=jr.get_sprite_frame(self.SPRITE_WALL_VERTICAL, 0),
+                    x=_get_raster_x_for_vertical_wall(x),
+                    y=_get_raster_y_for_vertical_wall(y)
                 )
 
+            def _render_horizontal_walls(raster, grid_vals):
+                # grid_vals is shape [H, W] or [H, W, 3]; produce x,y indices matching it
+                H, W = grid_vals.shape[:2]
+                xs = jnp.repeat(jnp.arange(H)[:, None], W, axis=1)
+                ys = jnp.repeat(jnp.arange(W)[None, :], H, axis=0)
 
-            # Flatten the walls arrays to iterate over them
-            # The tiling and repeating could maybe be done once for efficiency
-            walls_horizontal_flat = walls_horizontal.flatten()
-            walls_horizontal_x_coord_flat = jnp.tile(jnp.arange(walls_horizontal.shape[1]), walls_horizontal.shape[0])
-            walls_horizontal_y_coord_flat = jnp.repeat(jnp.arange(walls_horizontal.shape[0]), walls_horizontal.shape[1])
-            new_raster = jax.vmap(vmap_draw_horizontal_walls, in_axes=(0, 0, 0, None))(
-                walls_horizontal_x_coord_flat, walls_horizontal_y_coord_flat, walls_horizontal_flat, raster
+                # flatten to iterate
+                xs_f = xs.ravel()
+                ys_f = ys.ravel()
+                vals_f = grid_vals.reshape(-1, *grid_vals.shape[2:])  # [-1] or [-1,3]
+
+                def body(carry, elem):
+                    r = carry
+                    row, col, v = elem
+                    r = _render_horizontal_wall(r, col, row, v)
+                    return r, None
+
+                init = raster
+                elems = (xs_f, ys_f, vals_f)
+                raster_final, _ = jax.lax.scan(body, init, elems)
+                return raster_final
+
+            def _render_vertical_walls(raster, grid_vals):
+                # grid_vals is shape [H, W] or [H, W, 3]; produce x,y indices matching it
+                H, W = grid_vals.shape[:2]
+                xs = jnp.repeat(jnp.arange(H)[:, None], W, axis=1)
+                ys = jnp.repeat(jnp.arange(W)[None, :], H, axis=0)
+
+                # flatten to iterate
+                xs_f = xs.ravel()
+                ys_f = ys.ravel()
+                vals_f = grid_vals.reshape(-1, *grid_vals.shape[2:])
+                # [-1] or [-1,3]
+                def body(carry, elem):
+                    r = carry
+                    row, col, v = elem
+                    r = _render_vertical_wall(r, col, row, v)
+                    return r, None
+                init = raster
+                elems = (xs_f, ys_f, vals_f)
+                raster_final, _ = jax.lax.scan(body, init, elems)
+                return raster_final
+
+
+            new_raster = _render_horizontal_walls(
+                raster=raster,
+                grid_vals=walls_horizontal
             )
-
-            walls_vertical_flat = walls_vertical.flatten()
-            walls_vertical_x_coord_flat = jnp.tile(jnp.arange(walls_vertical.shape[1]), walls_vertical.shape[0])
-            walls_vertical_y_coord_flat = jnp.repeat(jnp.arange(walls_vertical.shape[0]), walls_vertical.shape[1])
-            new_raster = jax.vmap(vmap_draw_vertical_walls, in_axes=(0, 0, 0, None))(
-                walls_vertical_x_coord_flat, walls_vertical_y_coord_flat, walls_vertical_flat, new_raster
-            )
-
             return new_raster
 
-        _render_gameboard_background(raster=raster)
-        _render_gameboard_walls(raster=raster, state=state)
-        return raster
+        new_raster = _render_gameboard_background(raster=raster)
+        new_raster = _render_gameboard_walls(raster=new_raster, state=state)
+        return new_raster
 
     def _render_enemies(self, raster, state):
         # Placeholder: Gegner zeichnen
