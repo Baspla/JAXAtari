@@ -47,7 +47,7 @@ class WizardOfWorConstants(NamedTuple):
     STEP_SIZE: int = 1  # Schrittgröße für Bewegungen
 
     BOARD_POSITION: Tuple[int, int] = (0, 0)
-    GAME_AREA_OFFSET: Tuple[int, int] = (BOARD_POSITION[0] + WALL_THICKNESS, BOARD_POSITION[1] + WALL_THICKNESS)
+    GAME_AREA_OFFSET: Tuple[int, int] = (BOARD_POSITION[0] + WALL_THICKNESS + TILE_SIZE[0], BOARD_POSITION[1] + WALL_THICKNESS)
 
     # IMPORTANT: About the coordinates
     # The board goes from 0,0 (top-left) to 60,110 (bottom-right)
@@ -281,7 +281,7 @@ class WizardOfWorRenderer(JAXGameRenderer):
         (
             self.SPRITE_BG,
             self.SPRITE_PLAYER,
-            self.SPRITE_ENEMY,
+            self.SPRITE_BURWOR,
             self.SPRITE_BULLET,
             self.SCORE_DIGIT_SPRITES,
             self.SPRITE_WALL_HORIZONTAL,
@@ -293,20 +293,28 @@ class WizardOfWorRenderer(JAXGameRenderer):
         MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 
         bg = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/background.npy"))
-        player = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/player.npy"))
-        enemy = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/enemy.npy"))
+        player0 = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/player/player_0.npy"))
+        player1 = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/player/player_1.npy"))
+        player2 = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/player/player_2.npy"))
+        player3 = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/player/player_3.npy"))
+        burwor0 = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/enemies/burwor/burwor_0.npy"))
+        burwor1 = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/enemies/burwor/burwor_1.npy"))
+        burwor2 = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/enemies/burwor/burwor_2.npy"))
+        burwor3 = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/enemies/burwor/burwor_3.npy"))
         bullet = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/bullet.npy"))
         wall_horizontal = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/wall_horizontal.npy"))
         wall_vertical = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/wall_vertical.npy"))
-        radar_blip = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/radar_blip.npy"))
+        radar_blip_empty = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/radar/radar_empty.npy"))
+        radar_blip_burwor = jr.loadFrame(os.path.join(MODULE_DIR, "sprites/wizardofwor/radar/radar_burwor.npy"))
+
+        SPRITE_PLAYER = jnp.stack([player0, player1, player2, player3], axis=0)
+        SPRITE_BURWOR = jnp.stack([burwor0, burwor1, burwor2, burwor3], axis=0)
+        SPRITE_RADAR_BLIP = jnp.stack([radar_blip_empty, radar_blip_burwor], axis=0)
 
         SPRITE_BG = jnp.expand_dims(bg, axis=0)
-        SPRITE_PLAYER = jnp.expand_dims(player, axis=0)
-        SPRITE_ENEMY = jnp.expand_dims(enemy, axis=0)
         SPRITE_BULLET = jnp.expand_dims(bullet, axis=0)
         SPRITE_WALL_HORIZONTAL = jnp.expand_dims(wall_horizontal, axis=0)
         SPRITE_WALL_VERTICAL = jnp.expand_dims(wall_vertical, axis=0)
-        SPRITE_RADAR_BLIP = jnp.expand_dims(radar_blip, axis=0)
 
         SCORE_DIGIT_SPRITES = jr.load_and_pad_digits(
             os.path.join(MODULE_DIR, "sprites/pong/player_score_{}.npy"),
@@ -316,7 +324,7 @@ class WizardOfWorRenderer(JAXGameRenderer):
         return (
             SPRITE_BG,
             SPRITE_PLAYER,
-            SPRITE_ENEMY,
+            SPRITE_BURWOR,
             SPRITE_BULLET,
             SCORE_DIGIT_SPRITES,
             SPRITE_WALL_HORIZONTAL,
@@ -328,19 +336,12 @@ class WizardOfWorRenderer(JAXGameRenderer):
     def render(self, state: WizardOfWorState):
         # Raster initialisieren
         raster = jr.create_initial_frame(width=self.consts.WINDOW_WIDTH, height=self.consts.WINDOW_HEIGHT)
-        jax.debug.print("Raster shape: {shape}", shape=raster.shape)
         raster = self._render_gameboard(raster=raster, state=state)
-        jax.debug.print("Raster after gameboard rendering: {shape}", shape=raster.shape)
         raster = self._render_enemies(raster=raster, state=state)
         raster = self._render_bullet(raster=raster, state=state)
         raster = self._render_player(raster=raster, state=state)
         raster = self._render_score(raster=raster, state=state)
         raster = self._render_lives(raster=raster, state=state)
-
-        raster = raster.at[10:20, 10:20].set(self.consts.PLAYER_COLOR)
-        raster = raster.at[10:20, 30:40].set(self.consts.ENEMY_COLOR)
-        raster = raster.at[20:80, 20:30].set(self.consts.BULLET_COLOR)
-
         return raster
 
     def _render_gameboard(self, raster, state: WizardOfWorState):
@@ -348,7 +349,12 @@ class WizardOfWorRenderer(JAXGameRenderer):
 
         def _render_gameboard_background(raster):
             # Hintergrund zeichnen
-            return raster
+            return jr.render_at(
+                raster=raster,
+                sprite_frame=jr.get_sprite_frame(self.SPRITE_BG, 0),
+                x=self.consts.BOARD_POSITION[0],
+                y=self.consts.BOARD_POSITION[1]
+            )
 
         def _render_gameboard_walls(raster, state: WizardOfWorState):
             # Wände zeichnen basierend auf dem Gameboard
@@ -442,6 +448,10 @@ class WizardOfWorRenderer(JAXGameRenderer):
             new_raster = _render_horizontal_walls(
                 raster=raster,
                 grid_vals=walls_horizontal
+            )
+            new_raster = _render_vertical_walls(
+                raster=new_raster,
+                grid_vals=walls_vertical
             )
             return new_raster
 
